@@ -1,0 +1,43 @@
+[gd_scene format=3 uid="uid://rjmrpsht35fv"]
+
+[ext_resource type="Texture2D" uid="uid://bttgnb4wtxj7a" path="res://辛迪加素材/背景.png" id="1_wtcfe"]
+[ext_resource type="Script" uid="uid://c0yh0umayg3rf" path="res://scripts/main.gd" id="2_main"]
+
+[node name="Node2D" type="Node2D" unique_id=374323487]
+script = ExtResource("2_main")
+metadata/_edit_horizontal_guides_ = [402.0]
+metadata/_edit_vertical_guides_ = [1346.0]
+
+[node name="BackgroundCanvas" type="CanvasLayer" parent="." unique_id=1594219433]
+layer = -1
+
+[node name="TextureRect" type="TextureRect" parent="BackgroundCanvas" unique_id=2134214747]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -3.0
+offset_top = 5.0
+offset_right = -3.0
+offset_bottom = 5.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("1_wtcfe")
+expand_mode = 1
+stretch_mode = 6
+metadata/_edit_lock_ = true
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=797072376]
+zoom = Vector2(0.42, 0.42)
+
+[node name="ReferenceRect" type="ReferenceRect" parent="." unique_id=2128283602 groups=["guard_zone"]]
+offset_left = 548.0
+offset_top = 345.0
+offset_right = 734.0
+offset_bottom = 419.0
+
+[node name="ReferenceRect" type="ReferenceRect" parent="ReferenceRect" unique_id=683772020 groups=["guard_zone"]]
+layout_mode = 0
+offset_left = 635.0
+offset_top = -10.0
+offset_right = 803.0
+offset_bottom = 66.0

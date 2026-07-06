@@ -20,6 +20,7 @@ config/icon="res://icon.svg"
 [autoload]
 
 GameManager="*res://scripts/autoloads/game_manager.gd"
+MCPRuntimeProbe="*res://addons/godot_mcp/runtime/mcp_runtime_probe.gd"
 
 [display]
 

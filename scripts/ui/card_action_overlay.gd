@@ -144,7 +144,6 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 		var div_sprite := Sprite2D.new()
 		div_sprite.texture = load(div_icon_path)
 		div_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS  # 缩小时抗锯齿
-		# 引用 MemberCard 常量，修改常规卡片即自动同步
 		div_sprite.position = _card_bg.position + MemberCard.BADGE_BASE_POS * auto_scale_f
 		div_sprite.scale = Vector2(MemberCard.BADGE_BASE_SCALE, MemberCard.BADGE_BASE_SCALE) * auto_scale_f
 		div_sprite.modulate.a = 0.8
@@ -161,9 +160,13 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 		var rank_sprite := Sprite2D.new()
 		rank_sprite.texture = load(rank_icon_path)
 		rank_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS  # 缩小时抗锯齿
-		# 引用 MemberCard 常量，修改常规卡片即自动同步
 		rank_sprite.position = _card_bg.position + MemberCard.STAR_BASE_POS * auto_scale_f
 		rank_sprite.scale = Vector2(MemberCard.STAR_BASE_SCALE, MemberCard.STAR_BASE_SCALE) * auto_scale_f
+		
+		# 为三星图标单独向左上微调，注意带上全局卡片缩放系数(auto_scale_f)
+		if member.rank == 3:
+			rank_sprite.position += Vector2(-22, -18) * auto_scale_f
+			
 		rank_sprite.modulate.a = 0.8
 		_card_container.add_child(rank_sprite)
 

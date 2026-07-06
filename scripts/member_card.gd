@@ -17,6 +17,7 @@ var badge_sprite: Sprite2D
 var star_sprite: Sprite2D
 var name_label: Label
 var prison_icon: Sprite2D
+var progress_bg: Sprite2D
 var progress_bar: TextureProgressBar
 var prison_turn_badge: Sprite2D
 var prison_turn_label: Label
@@ -122,11 +123,16 @@ func _build_tree():
 	add_child(prison_icon)
 
 	# --- 部门情报进度条 ---
+	progress_bg = Sprite2D.new()
+	progress_bg.texture = preload("res://辛迪加素材/进度条背板.png")
+	progress_bg.z_index = 6
+	progress_bg.visible = false
+	add_child(progress_bg)
+
 	progress_bar = TextureProgressBar.new()
-	progress_bar.texture_under = preload("res://辛迪加素材/进度条背板.png")
-	progress_bar.texture_over = preload("res://辛迪加素材/进度条.png")
+	progress_bar.texture_under = preload("res://辛迪加素材/进度条.png")
 	progress_bar.texture_progress = preload("res://辛迪加素材/进度条黄色.png")
-	progress_bar.z_index = 6
+	progress_bar.z_index = 7
 	progress_bar.visible = false
 	add_child(progress_bar)
 
@@ -218,6 +224,11 @@ func update_display() -> void:
 			3: star_sprite.texture = _tex_star3
 		star_sprite.scale = Vector2(STAR_BASE_SCALE, STAR_BASE_SCALE)
 		star_sprite.position = STAR_BASE_POS
+		
+		# 仅当是三星图标时，进行微调（向左上方偏移）
+		if member_data.rank == 3:
+			star_sprite.position += Vector2(-22, -18)
+			
 		star_sprite.modulate.a = 0.8
 
 	# 部门角标 — 815x447 图层，直接对齐背景
@@ -271,21 +282,35 @@ func update_display() -> void:
 
 	# 部门情报进度条更新逻辑（仅部门首领显示，未翻开时也可见）
 	if member_data.is_leader and member_data.division != GameManager.Division.NONE:
+		progress_bg.visible = true
 		progress_bar.visible = true
 		var pb_actual_size := Vector2.ZERO
-		if progress_bar.texture_over:
-			var pb_native_size = progress_bar.texture_over.get_size()
-			# 为了适配各种素材尺寸，我们将其等比缩放至约占据卡牌宽度的大部分（比如 180 像素）
-			var target_w := 210.0
-			var pb_scale := 1.0
-			if pb_native_size.x > 0:
-				pb_scale = minf(target_w / pb_native_size.x, 1.0)
-			progress_bar.scale = Vector2(pb_scale, pb_scale)
+		var pb_scale := 1.1 # 缩小到 1.1 倍，保持合适的宽度和比例
+		
+		if progress_bar.texture_under:
+			var pb_native_size = progress_bar.texture_under.get_size()
+			
+			progress_bg.scale = Vector2(pb_scale, pb_scale)
 			pb_actual_size = pb_native_size * pb_scale
-			# 将其居中置于名字下方 (名字的 Y 为 bg_size.y * 0.2，大约为 89)
+			
+			# 将背板置于卡牌的最下方
 			if bg_sprite.texture:
-				var bg_y = bg_sprite.texture.get_size().y * 0.32
-				progress_bar.position = Vector2(-pb_actual_size.x * 0.5, bg_y)
+				var bg_y = 185.0
+				var offset_x = 8.0 # 抵消素材图左侧纸张毛边导致的视觉偏左，向右微调 8 像素
+				
+				progress_bg.position = Vector2(offset_x, bg_y)
+				
+				# 必须显式设置 Control 的 size，否则 pivot_offset 缩放会因为默认 size 为 0 导致位置偏移
+				progress_bar.size = pb_native_size
+				progress_bar.pivot_offset = pb_native_size * 0.5
+				progress_bar.scale = Vector2(pb_scale, pb_scale)
+				
+				# 进度条背板下方有投影，导致视觉中心偏上。这里将进度条位置向上微调 10 像素，同时向右偏移 8 像素以与背板对准
+				progress_bar.position = Vector2(offset_x, bg_y - 10.0 * pb_scale) - pb_native_size * 0.5
+				
+				# 经精准检测，进度条轨道贴图(进度条.png)右侧有 15 像素透明空白，而左侧与黄色填充图(进度条黄色.png)均在 X=0 开始绘制左侧铜帽。
+				# 因此，X 轴偏移必须为 0 像素，而 Y 轴由于轨道上方有 15 像素透明空白，需要向下偏移 15 像素，此时两者铜帽才能完美重合，不产生重影。
+				progress_bar.texture_progress_offset = Vector2(0.0, 15.0)
 		else:
 			pb_actual_size = progress_bar.size
 		
@@ -296,9 +321,15 @@ func update_display() -> void:
 		var div_name: String = GameManager.DIVISION_NAMES.get(member_data.division, "未知部门")
 		progress_bar.max_value = 100
 		progress_bar.value = percent * 100
-		_progress_hover_rect = Rect2(progress_bar.position, pb_actual_size)
+		
+		# hover 触发区域也需要使用缩放后的实际居中范围
+		var hover_y = 185.0
+		var offset_x = 8.0
+		_progress_hover_rect = Rect2(-pb_actual_size.x * 0.5 + offset_x, hover_y - pb_actual_size.y * 0.5, pb_actual_size.x, pb_actual_size.y)
+			
 		_progress_tooltip_text = div_name + " 情报进度: " + str(percent_int) + "% (" + str(percent_int) + "/100)"
 	else:
+		progress_bg.visible = false
 		progress_bar.visible = false
 		_progress_hover_rect = Rect2()
 		_progress_tooltip_text = ""

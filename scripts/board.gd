@@ -9,10 +9,10 @@ signal card_unhovered(member_name: String)
 
 # ===== 布局常量（世界坐标） =====
 const COLUMN_X := {
-	GameManager.Division.TRANSPORT:     -980,
-	GameManager.Division.FORTIFICATION:  -300,
-	GameManager.Division.RESEARCH:        280,
-	GameManager.Division.INTERVENTION:   800,
+	GameManager.Division.TRANSPORT:     -1050,
+	GameManager.Division.FORTIFICATION:  -350,
+	GameManager.Division.RESEARCH:        350,
+	GameManager.Division.INTERVENTION:   1050,
 }
 const BADGE_Y      := -800
 const PROGRESS_Y   := -620
@@ -25,7 +25,7 @@ const LEADER_Y := {
 
 # 审讯区（底部中央，最多3人横排）
 const PRISON_Y     := 950
-const PRISON_X_GAP := 350
+const PRISON_X_GAP := 350   # 审讯区横向间距（适配底部边框）
 
 # 自由人散落区域
 const FREE_CENTER  := Vector2(0, 420)
@@ -39,14 +39,18 @@ const CARD_SCALE   := 0.9
 # 每个 Vector2 是相对于首领位置的偏移 (dx, dy)
 # 参考原版：上一下二，卡片不叠加（4人除外）
 
-# 1人：居中下方
-const _SLOTS_1 := [Vector2(0, 350)]
-# 2人：左右并排
-const _SLOTS_2 := [Vector2(-220, 350), Vector2(220, 350)]
-# 3人：上一下二
-const _SLOTS_3 := [Vector2(0, 350), Vector2(-220, 700), Vector2(220, 700)]
-# 4人：两排两列（部下点位）
-const _SLOTS_4 := [Vector2(-220, 350), Vector2(220, 350), Vector2(-220, 700), Vector2(220, 700)]
+# 部下采用「纵向链式」排列：每人依次向下，不横向展开
+# 列间距 700px（新 COLUMN_X 对称布局），卡片有效宽 252px，无跨部门冲突
+# 垂直步长 420px > 卡片有效高 342px，无纵向重叠
+
+# 1人：首领正下方
+const _SLOTS_1 := [Vector2(0, 420)]
+# 2人：纵向链式
+const _SLOTS_2 := [Vector2(0, 420), Vector2(0, 840)]
+# 3人：纵向链式
+const _SLOTS_3 := [Vector2(0, 420), Vector2(0, 840), Vector2(0, 1260)]
+# 4人：两排两列（横向偏移克制，不超出列宽）
+const _SLOTS_4 := [Vector2(-140, 420), Vector2(140, 420), Vector2(-140, 840), Vector2(140, 840)]
 
 # 每个部门额外的散落方向偏移（避免部下卡片在中心挤压）
 const _DIV_BIAS := {
@@ -68,7 +72,7 @@ var _leader_slots: Dictionary = {}    # Division -> Vector2 (首领专属坐标)
 
 # ===== 子节点 =====
 var _cards: Dictionary = {}           # member_name -> MemberCard
-var _rel_lines_placeholder = null     # (已移除关系连线)
+var _rel_lines = null                 # RelationshipLines
 var _badges: Dictionary = {}          # Division -> Sprite2D
 var _mastermind_card: Sprite2D
 
@@ -82,7 +86,7 @@ func _ready():
 	
 	_build_divisions()
 	_build_mastermind()
-	# _build_relationship_layer() (已移除)
+	_build_relationship_layer()
 	_create_cards()
 	_layout_cards()
 
@@ -90,6 +94,9 @@ func _ready():
 	GameManager.board_changed.connect(_on_board_changed)
 	GameManager.intelligence_changed.connect(_on_intel_changed)
 	GameManager.member_revealed.connect(_on_member_revealed)
+
+func _process(_delta: float):
+	_update_relationship_lines()
 
 # ===== 延迟初始化 =====
 func _late_init():
@@ -115,11 +122,6 @@ func _build_divisions():
 		badge.position = Vector2(cx, BADGE_Y)
 		add_child(badge)
 		_badges[div] = badge
-
-		# (已移除部门文字标签)
-
-
-		# (已移除旧版进度条，现在由 MemberCard 自行管理显示)
 
 
 
@@ -152,7 +154,14 @@ func _build_mastermind():
 	lbl.size = Vector2(320, 60)
 	add_child(lbl)
 
-# (已移除 _build_relationship_layer)
+func _build_relationship_layer():
+	if _rel_lines != null:
+		return
+	_rel_lines = RelationshipLines.new()
+	_rel_lines.name = "RelationshipLines"
+	_rel_lines.z_as_relative = true
+	_rel_lines.z_index = -20
+	add_child(_rel_lines)
 
 
 # 核心同步函数：自定义排版槽位解析
@@ -244,56 +253,54 @@ func _create_cards():
 # ===== 排列卡片到正确位置 =====
 func _layout_cards():
 	var assigned_positions: Array[Vector2] = []
-	
-	# --- 1. 各部门：首领 + 成员散落排列 ---
+	var max_sub_y: float = -9999.0  # 追踪所有部下的最低 Y，用于计算自由人安全行
+
+	# --- 1. 各部门：首领（固定位置不变）+ 部下（_SLOTS 数学模式，去掉手动槽位） ---
 	for div in GameManager.ALL_DIVISIONS:
-		var cx: float = COLUMN_X[div]
-		var ly: float = LEADER_Y[div]
-		var bias: float = _DIV_BIAS[div]
+		# 确定首领的基础位置
+		var leader_target: Vector2
+		if _leader_slots.has(div):
+			leader_target = _leader_slots[div]
+		else:
+			leader_target = Vector2(COLUMN_X[div], LEADER_Y[div])
+		
+		# 使用首领的坐标作为部下排版的基准原点，保证整个部门垂直对齐
+		var cx: float = leader_target.x
+		var ly: float = leader_target.y
 
-		# 检查是否有手动摆放的专用槽位
-		var division_custom_slots = _custom_slots.get(div, [])
-		var use_custom = division_custom_slots.size() > 0
-
-		# 首领位置决定
+		# 首领动画
 		var leader = GameManager.get_division_leader(div)
 		if leader and _cards.has(leader.member_name) and not leader.is_imprisoned:
-			var leader_target: Vector2
-			if _leader_slots.has(div):
-				# 如果单独设置了首领专属方框，强制使用该方框
-				leader_target = _leader_slots[div]
-			else:
-				# 否则使用代码默认纵向坐标
-				leader_target = Vector2(cx, ly)
-				
 			assigned_positions.append(leader_target)
 			_animate_card_to(_cards[leader.member_name], leader_target)
 
-		# 收集该部门非监禁成员
+		# 收集该部门非监禁部下
 		var active: Array = []
 		for m in GameManager.get_division_members(div):
 			if not m.is_imprisoned and _cards.has(m.member_name):
 				active.append(m)
 
-		# 成员排位
-		var slots: Array = _get_slot_pattern(active.size())
+		# 部下：优先使用场景中指定的自定义坑位，不足时回退数学模式
+		var sub_slots_world: Array = []
+		if _custom_slots.has(div) and _custom_slots[div].size() > 0:
+			# 使用场景坑位（本地坐标，已在 _parse_custom_slots 中转换）
+			sub_slots_world = _custom_slots[div]
+
 		for i in range(active.size()):
-			var target: Vector2
-			var jitter := _name_jitter(active[i].member_name)
-			
-			if use_custom and i < division_custom_slots.size():
-				target = division_custom_slots[i]
+			var final_pos: Vector2
+			if i < sub_slots_world.size():
+				# ✅ 落入场景边框中心
+				final_pos = sub_slots_world[i]
 			else:
-				# 否则走传统排位算法
-				var offset: Vector2 = slots[i]
-				target = Vector2(cx + offset.x + bias + jitter.x, ly + offset.y + jitter.y)
-			
-			# --- 统一应用避让逻辑 ---
-			var final_pos = target if (use_custom and i < division_custom_slots.size()) else _get_avoidance_pos(_cards[active[i].member_name], target)
+				# ⚠️ 坑位不足时，在最后一个坑位下方继续延伸
+				var base: Vector2 = sub_slots_world[-1] if sub_slots_world.size() > 0 else leader_target
+				final_pos = base + Vector2(0, 420 * (i - sub_slots_world.size() + 1))
 			assigned_positions.append(final_pos)
 			_animate_card_to(_cards[active[i].member_name], final_pos)
+			if final_pos.y > max_sub_y:
+				max_sub_y = final_pos.y
 
-	# --- 2. 审讯区（底部中央，横排最多3人） ---
+	# --- 2. 审讯区（固定 PRISON_Y=950，横排居中，不变） ---
 	var imprisoned: Array = []
 	for mname in GameManager.members:
 		var m = GameManager.members[mname]
@@ -307,47 +314,62 @@ func _layout_cards():
 		assigned_positions.append(p_pos)
 		_animate_card_to(_cards[imprisoned[i]], p_pos)
 
-	# --- 3. 自由人散落排列 ---
+	# --- 3. 自由人：使用场景坑位，自动跳过被部门成员占用的位置 ---
 	var free_members: Array = []
 	for m in GameManager.get_unassigned_members():
 		if not m.is_imprisoned and _cards.has(m.member_name):
 			free_members.append(m)
 
-	# 检查是否有手动摆放的专用槽位
-	var unassigned_slots = _custom_slots.get(GameManager.Division.NONE, [])
-	
-	# 过滤出没有被其他部门卡片占用的自由人位置
-	var valid_unassigned_slots: Array[Vector2] = []
-	for slot_pos in unassigned_slots:
-		var overlapped := false
-		for assigned_pos in assigned_positions:
-			var dx = abs(slot_pos.x - assigned_pos.x)
-			var dy = abs(slot_pos.y - assigned_pos.y)
-			if dx < 130.0 and dy < 190.0: # 卡片尺寸的 90% 内认为重叠
-				overlapped = true
-				break
-		if not overlapped:
-			valid_unassigned_slots.append(slot_pos)
-			
-	var use_custom_unassigned = valid_unassigned_slots.size() > 0
+	if free_members.size() > 0:
+		# 读取场景自定义坑位（全部）
+		var all_free_slots: Array = []
+		if _custom_slots.has(GameManager.Division.NONE):
+			all_free_slots = _custom_slots[GameManager.Division.NONE]
 
-	# 自由人备用散落模式
-	var free_slots := _get_free_slots(free_members.size())
-	for i in range(free_members.size()):
-		var target: Vector2
-		if use_custom_unassigned and i < valid_unassigned_slots.size():
-			target = valid_unassigned_slots[i]
-		else:
-			var slot_pos: Vector2 = free_slots[i]
-			var jitter: Vector2 = _name_jitter(free_members[i].member_name)
-			target = Vector2(FREE_CENTER.x + slot_pos.x + jitter.x, FREE_CENTER.y + slot_pos.y + jitter.y)
-			
-		var final_pos = target if (use_custom_unassigned and i < valid_unassigned_slots.size()) else _get_avoidance_pos(_cards[free_members[i].member_name], target)
-		assigned_positions.append(final_pos)
-		_animate_card_to(_cards[free_members[i].member_name], final_pos)
+		# 过滤掉已被部门成员占用的坑位
+		# 距离阈值：约等于卡片有效半径，两张卡片中心距小于此值视为重叠
+		const OCCUPY_THRESHOLD := 300.0
+		var available_slots: Array = []
+		for slot_pos in all_free_slots:
+			var occupied := false
+			for ap in assigned_positions:
+				if slot_pos.distance_to(ap) < OCCUPY_THRESHOLD:
+					occupied = true
+					break
+			if not occupied:
+				available_slots.append(slot_pos)
 
+		# 溢出续排锚点：优先用最后一个可用坑位，否则用原坑位列表末尾
+		var overflow_step_y := 440.0
+		var overflow_anchor: Vector2 = (
+			available_slots[-1] if available_slots.size() > 0
+			else (all_free_slots[-1] if all_free_slots.size() > 0 else FREE_CENTER)
+		)
 
-	# (已移除关系连线更新)
+		for i in range(free_members.size()):
+			var target: Vector2
+			if i < available_slots.size():
+				# ✅ 落入未被占用的场景坑位
+				target = available_slots[i]
+			else:
+				# ⚠️ 可用坑位耗尽：从锚点正下方续排，同时避开已分配位置
+				var overflow_idx: int = i - available_slots.size()
+				target = overflow_anchor + Vector2(0, overflow_step_y * (overflow_idx + 1))
+				# 若溢出位置仍与已有位置冲突，继续向下推
+				var extra := 0
+				while true:
+					var blocked := false
+					for ap in assigned_positions:
+						if target.distance_to(ap) < OCCUPY_THRESHOLD:
+							blocked = true
+							break
+					if not blocked:
+						break
+					extra += 1
+					target = overflow_anchor + Vector2(0, overflow_step_y * (overflow_idx + 1 + extra))
+			assigned_positions.append(target)
+			_animate_card_to(_cards[free_members[i].member_name], target)
+
 
 
 # ===== 散落模式选择 =====
@@ -357,12 +379,12 @@ func _get_slot_pattern(count: int) -> Array:
 		2: return _SLOTS_2
 		3: return _SLOTS_3
 		4: return _SLOTS_4
-	# >4 的极端情况：基于4人模式扩展
+	# >4 的极端情况：继续纵向链式延伸
 	var result: Array = _SLOTS_4.duplicate()
 	for i in range(4, count):
-		var row := i / 2
+		var row := int(i / 2)
 		var side := 1 if (i % 2 == 0) else -1
-		result.append(Vector2(side * 220, 350 + row * 350))
+		result.append(Vector2(side * 140, 420 + row * 420))
 	return result
 
 
@@ -424,16 +446,62 @@ func _get_avoidance_pos(card: MemberCard, target: Vector2) -> Vector2:
 func _animate_card_to(card: MemberCard, target: Vector2):
 	var tw := create_tween()
 	tw.tween_property(card, "position", target, 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	tw.tween_callback(Callable(self, "_snap_card_to_pixel").bind(card))
 
-# (已移除 _update_relationship_lines)
+func _snap_card_to_pixel(card: MemberCard):
+	card.position = Vector2(round(card.position.x), round(card.position.y))
+
+func _update_relationship_lines():
+	if _rel_lines == null:
+		return
+	var positions: Dictionary = {}
+	for mname in _cards:
+		var card: MemberCard = _cards[mname]
+		if card == null:
+			continue
+		var ms = card.member_data
+		if ms == null or not ms.is_on_board:
+			continue
+		positions[mname] = card.global_position
+	_rel_lines.update_positions(positions)
 
 
 # ===== 信号回调 =====
 func _on_board_changed():
-	# 刷新所有卡片显示
+	# 1. 移除已经不在场上的卡片
+	var to_remove = []
 	for mname in _cards:
+		var card = _cards[mname]
+		var ms = card.member_data
+		if ms == null or not ms.is_on_board:
+			to_remove.append(mname)
+	for mname in to_remove:
+		var card = _cards[mname]
+		card.queue_free()
+		_cards.erase(mname)
+
+	# 2. 为新上场的成员创建卡片
+	for mname in GameManager.members:
+		var m = GameManager.members[mname]
+		if m.is_on_board and not _cards.has(mname):
+			var card := MemberCard.new()
+			card.scale = Vector2(CARD_SCALE, CARD_SCALE)
+			card.setup(m)
+			card.card_clicked.connect(_on_card_click)
+			card.card_hovered.connect(_on_card_hover.bind(mname))
+			card.card_unhovered.connect(_on_card_unhover)
+			card.position = FREE_CENTER
+			add_child(card)
+			_cards[mname] = card
+
+	# 3. 刷新所有卡片显示
+	for mname in _cards:
+		_cards[mname].member_data = GameManager.members[mname]
 		_cards[mname].update_display()
-	# 重新布局
+		
+	# 4. 重新解析坑位（成员状态变化后坑位占用情况会改变）
+	_parse_custom_slots()
+	# 5. 重新布局
 	_layout_cards()
 	# 延迟更新（原连线更新已移除）
 	await get_tree().create_timer(0.5).timeout

@@ -18,7 +18,13 @@ var star_sprite: Sprite2D
 var name_label: Label
 var prison_icon: Sprite2D
 var progress_bar: TextureProgressBar
+var prison_turn_badge: Sprite2D
+var prison_turn_label: Label
+var _hit_control: Control
 var _highlight_tween: Tween = null
+var _progress_hover_rect: Rect2 = Rect2()
+var _progress_tooltip_text: String = ""
+static var _shared_prison_font_size: int = -1  # 类级别共享，所有实例只计算一次
 
 # 预加载纹理
 var _tex_bg        := preload("res://辛迪加素材/人物背景.png")
@@ -28,12 +34,32 @@ var _tex_star1     := preload("res://辛迪加素材/一星等级.png")
 var _tex_star2     := preload("res://辛迪加素材/二星等级.png")
 var _tex_star3     := preload("res://辛迪加素材/三星等级.png")
 var _tex_question  := preload("res://辛迪加素材/问号.png")
+var _tex_prison_turn := preload("res://辛迪加素材/回合数.png")
+var _font_main := preload("res://辛迪加素材/zt.ttf")
 
 # 部门角标纹理
 var _tex_badge_transport     := preload("res://辛迪加素材/运输部角标.png")
 var _tex_badge_fortification := preload("res://辛迪加素材/防卫部角标.png")
 var _tex_badge_research      := preload("res://辛迪加素材/科研部角标.png")
 var _tex_badge_intervention  := preload("res://辛迪加素材/调停部角标.png")
+
+const PRISON_TURN_BADGE_SCALE := 1.1
+
+# ── 星级图标 & 部门角标 布局常量 ──
+# 修改这里，悬停放大卡片会自动同步
+const STAR_BASE_SCALE   := 1.2
+const STAR_BASE_POS     := Vector2(160, -130)
+const BADGE_BASE_SCALE  := 0.8
+const BADGE_BASE_POS    := Vector2(-125, -145)
+const PRISON_TURN_BADGE_ANCHOR_Y_RATIO := 0.64
+const PRISON_TURN_BADGE_OFFSET := Vector2(0.0, -100) # x 向右，y 向下
+const PRISON_TURN_TEXT_MAX_SIZE := 60
+const PRISON_TURN_TEXT_MIN_SIZE := 16
+const PRISON_TURN_TEXT_INNER_MARGIN := Vector2(18.0, 8.0) # 底图内边距，越小文字越“顶满”
+const PRISON_TURN_TEXT_Y_OFFSET := -1.0
+const PRISON_TURN_TEXT_COLOR := Color8(154, 131, 94)
+const PRISON_TURN_TEXT_FAKE_BOLD_OUTLINE := 2
+const PRISON_TURN_TEXT_FIT_TEMPLATE := "剩余88回合" # 统一按模板测字号，避免不同数字导致视觉高度不齐
 
 
 func _ready():
@@ -104,15 +130,43 @@ func _build_tree():
 	progress_bar.visible = false
 	add_child(progress_bar)
 
+	# --- 审讯剩余回合底图与文字 ---
+	prison_turn_badge = Sprite2D.new()
+	prison_turn_badge.texture = _tex_prison_turn
+	prison_turn_badge.visible = false
+	prison_turn_badge.z_index = 6
+	add_child(prison_turn_badge)
+
+	prison_turn_label = Label.new()
+	prison_turn_label.visible = false
+	prison_turn_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	# 改为 TOP 配合手动计算位置，避免不同数字的外框不同导致中心点漂移
+	prison_turn_label.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	prison_turn_label.z_index = 7
+	prison_turn_label.add_theme_font_override("font", _font_main)
+	prison_turn_label.add_theme_font_size_override("font_size", PRISON_TURN_TEXT_MAX_SIZE)
+	prison_turn_label.add_theme_color_override("font_color", PRISON_TURN_TEXT_COLOR)
+	# 同色描边模拟加粗，不产生阴影感。
+	prison_turn_label.add_theme_color_override("font_outline_color", PRISON_TURN_TEXT_COLOR)
+	prison_turn_label.add_theme_constant_override("outline_size", PRISON_TURN_TEXT_FAKE_BOLD_OUTLINE)
+	prison_turn_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
+	prison_turn_label.add_theme_constant_override("shadow_offset_x", 0)
+	prison_turn_label.add_theme_constant_override("shadow_offset_y", 0)
+	add_child(prison_turn_label)
+
 	# --- 点击区域 (使用 Control 完美处理遮挡关系) ---
-	var hit_control := Control.new()
-	hit_control.size = Vector2(280, 380)
-	hit_control.position = Vector2(-140, -190)
-	hit_control.mouse_filter = Control.MOUSE_FILTER_STOP
-	hit_control.gui_input.connect(_on_control_gui_input)
-	hit_control.mouse_entered.connect(_on_mouse_entered)
-	hit_control.mouse_exited.connect(_on_mouse_exited)
-	add_child(hit_control)
+	_hit_control = Control.new()
+	_hit_control.size = Vector2(280, 380)
+	_hit_control.position = Vector2(-140, -190)
+	_hit_control.mouse_filter = Control.MOUSE_FILTER_STOP
+	_hit_control.gui_input.connect(_on_control_gui_input)
+	_hit_control.mouse_entered.connect(_on_mouse_entered)
+	_hit_control.mouse_exited.connect(_on_mouse_exited)
+	add_child(_hit_control)
+
+	# 确保类级别字号已计算（只在第一个实例时执行一次）
+	if _shared_prison_font_size < 0:
+		_shared_prison_font_size = _compute_prison_font_size()
 	_tree_built = true
 
 func setup(data) -> void:
@@ -144,7 +198,7 @@ func update_display() -> void:
 			if bg_sprite.texture:
 				var bg_size: Vector2 = bg_sprite.texture.get_size()
 				var p_size: Vector2 = ptex.get_size()
-				var fit_scale: float = minf(bg_size.x * 0.55 / p_size.x, bg_size.y * 0.85 / p_size.y)
+				var fit_scale: float = minf(bg_size.x * 0.85 / p_size.x, bg_size.y * 0.85 / p_size.y)
 				portrait_sprite.scale = Vector2(fit_scale, fit_scale)
 				portrait_sprite.position = Vector2(0, -bg_size.y * 0.02)
 
@@ -162,8 +216,8 @@ func update_display() -> void:
 			1: star_sprite.texture = _tex_star1
 			2: star_sprite.texture = _tex_star2
 			3: star_sprite.texture = _tex_star3
-		star_sprite.scale = Vector2(0.8, 0.8)
-		star_sprite.position = Vector2(170, -155)
+		star_sprite.scale = Vector2(STAR_BASE_SCALE, STAR_BASE_SCALE)
+		star_sprite.position = STAR_BASE_POS
 		star_sprite.modulate.a = 0.8
 
 	# 部门角标 — 815x447 图层，直接对齐背景
@@ -174,8 +228,8 @@ func update_display() -> void:
 		var badge_tex: Texture2D = _get_badge_texture(member_data.division)
 		if badge_tex:
 			badge_sprite.texture = badge_tex
-			badge_sprite.scale =  Vector2(0.8, 0.8)
-			badge_sprite.position = Vector2(-125, -145)
+			badge_sprite.scale = Vector2(BADGE_BASE_SCALE, BADGE_BASE_SCALE)
+			badge_sprite.position = BADGE_BASE_POS
 			badge_sprite.modulate.a = 0.8
 
 	# 名称 — 隐藏时显示「???」
@@ -191,13 +245,34 @@ func update_display() -> void:
 	# 入狱
 	prison_icon.visible = member_data.is_imprisoned
 	if member_data.is_imprisoned:
-		modulate = Color(0.5, 0.5, 0.65, 0.8)
-	else:
 		modulate = Color.WHITE
 
-	# 部门情报进度条更新逻辑 (仅部门首领显示，且排除主脑)
-	if not is_hidden and member_data.is_leader and member_data.division != GameManager.Division.NONE:
+		prison_turn_badge.visible = true
+		prison_turn_label.visible = true
+		var remain_turns: int = maxi(member_data.prison_turns_left, 0)
+		prison_turn_label.text = "剩余" + str(remain_turns) + "回合"
+
+		if _tex_prison_turn:
+			var tex_size: Vector2 = _tex_prison_turn.get_size()
+			var badge_scale := PRISON_TURN_BADGE_SCALE
+			prison_turn_badge.scale = Vector2(badge_scale, badge_scale)
+			var badge_y := 220.0
+			if bg_sprite.texture:
+				badge_y = bg_sprite.texture.get_size().y * PRISON_TURN_BADGE_ANCHOR_Y_RATIO
+			badge_y += PRISON_TURN_BADGE_OFFSET.y
+			prison_turn_badge.position = Vector2(round(PRISON_TURN_BADGE_OFFSET.x), round(badge_y))
+
+			var badge_size := tex_size * badge_scale
+			_layout_prison_turn_text(prison_turn_label.text, badge_size, badge_y)
+	else:
+		modulate = Color.WHITE
+		prison_turn_badge.visible = false
+		prison_turn_label.visible = false
+
+	# 部门情报进度条更新逻辑（仅部门首领显示，未翻开时也可见）
+	if member_data.is_leader and member_data.division != GameManager.Division.NONE:
 		progress_bar.visible = true
+		var pb_actual_size := Vector2.ZERO
 		if progress_bar.texture_over:
 			var pb_native_size = progress_bar.texture_over.get_size()
 			# 为了适配各种素材尺寸，我们将其等比缩放至约占据卡牌宽度的大部分（比如 180 像素）
@@ -206,19 +281,63 @@ func update_display() -> void:
 			if pb_native_size.x > 0:
 				pb_scale = minf(target_w / pb_native_size.x, 1.0)
 			progress_bar.scale = Vector2(pb_scale, pb_scale)
-			var pb_actual_size = pb_native_size * pb_scale
+			pb_actual_size = pb_native_size * pb_scale
 			# 将其居中置于名字下方 (名字的 Y 为 bg_size.y * 0.2，大约为 89)
 			if bg_sprite.texture:
 				var bg_y = bg_sprite.texture.get_size().y * 0.32
 				progress_bar.position = Vector2(-pb_actual_size.x * 0.5, bg_y)
+		else:
+			pb_actual_size = progress_bar.size
 		
 		# 读取该部门当前的情报值并转换为进度 (使用正确的变量名: intelligence)
 		var raw_val: float = GameManager.intelligence.get(member_data.division, 0.0)
 		var percent: float = raw_val if raw_val <= 1.0 else (raw_val / 100.0)
+		var percent_int: int = int(round(percent * 100.0))
+		var div_name: String = GameManager.DIVISION_NAMES.get(member_data.division, "未知部门")
 		progress_bar.max_value = 100
 		progress_bar.value = percent * 100
+		_progress_hover_rect = Rect2(progress_bar.position, pb_actual_size)
+		_progress_tooltip_text = div_name + " 情报进度: " + str(percent_int) + "% (" + str(percent_int) + "/100)"
 	else:
 		progress_bar.visible = false
+		_progress_hover_rect = Rect2()
+		_progress_tooltip_text = ""
+		if _hit_control:
+			_hit_control.tooltip_text = ""
+
+func _compute_prison_font_size() -> int:
+	## 根据固定常量和预加载纹理计算一次字号，供所有 update_display 复用
+	var tex_size: Vector2 = _tex_prison_turn.get_size() if _tex_prison_turn else Vector2(200, 80)
+	var badge_size := tex_size * PRISON_TURN_BADGE_SCALE
+	var inner_size := Vector2(
+		maxf(10.0, badge_size.x - PRISON_TURN_TEXT_INNER_MARGIN.x * 2.0),
+		maxf(10.0, badge_size.y - PRISON_TURN_TEXT_INNER_MARGIN.y * 2.0)
+	)
+	var best := PRISON_TURN_TEXT_MIN_SIZE
+	if _font_main:
+		for size in range(PRISON_TURN_TEXT_MAX_SIZE, PRISON_TURN_TEXT_MIN_SIZE - 1, -1):
+			var tw: float = _font_main.get_string_size(PRISON_TURN_TEXT_FIT_TEMPLATE, HORIZONTAL_ALIGNMENT_CENTER, -1.0, size).x
+			var th: float = _font_main.get_height(size)
+			if tw <= inner_size.x and th <= inner_size.y:
+				best = size
+				break
+	return best
+
+func _layout_prison_turn_text(_text: String, badge_size: Vector2, badge_y: float) -> void:
+	var inner_size := Vector2(
+		maxf(10.0, badge_size.x - PRISON_TURN_TEXT_INNER_MARGIN.x * 2.0),
+		maxf(10.0, badge_size.y - PRISON_TURN_TEXT_INNER_MARGIN.y * 2.0)
+	)
+	# 手动基于字体实际高度计算垂直居中位置，不受文本内容（1、2、3）字形高度不同的影响
+	var font_h: float = _font_main.get_height(_shared_prison_font_size) if _font_main else inner_size.y
+	var label_pos := Vector2(
+		PRISON_TURN_BADGE_OFFSET.x - inner_size.x * 0.5,
+		badge_y - font_h * 0.5 + PRISON_TURN_TEXT_Y_OFFSET
+	)
+	prison_turn_label.position = Vector2(round(label_pos.x), round(label_pos.y))
+	prison_turn_label.size = Vector2(round(inner_size.x), font_h + 20) # 高度给足避免裁剪
+	# 直接使用类级别共享字号，所有卡片、所有回合数完全一致
+	prison_turn_label.add_theme_font_size_override("font_size", _shared_prison_font_size)
 
 func _get_badge_texture(division: int) -> Texture2D:
 	match division:
@@ -250,11 +369,14 @@ func set_highlighted(on: bool) -> void:
 		_highlight_tween.tween_property(halo_sprite, "modulate:a", 1.0, 0.4)
 		_highlight_tween.tween_property(halo_sprite, "modulate:a", 0.5, 0.4)
 	else:
-		modulate = Color.WHITE if (member_data == null or not member_data.is_imprisoned) else Color(0.5, 0.5, 0.65, 0.8)
+		modulate = Color.WHITE
 		halo_sprite.modulate.a = 1.0 # 恢复不透明度
 
 
 func _on_control_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		_update_progress_tooltip(event.position)
+
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if member_data:
 			card_clicked.emit(member_data.member_name)
@@ -264,5 +386,20 @@ func _on_mouse_entered() -> void:
 		card_hovered.emit(member_data.member_name)
 
 func _on_mouse_exited() -> void:
+	if _hit_control:
+		_hit_control.tooltip_text = ""
 	if member_data:
 		card_unhovered.emit(member_data.member_name)
+
+func _update_progress_tooltip(local_pos_in_hit: Vector2) -> void:
+	if _hit_control == null:
+		return
+	if not progress_bar.visible or _progress_tooltip_text == "":
+		_hit_control.tooltip_text = ""
+		return
+
+	var card_local_pos: Vector2 = _hit_control.position + local_pos_in_hit
+	if _progress_hover_rect.has_point(card_local_pos):
+		_hit_control.tooltip_text = _progress_tooltip_text
+	else:
+		_hit_control.tooltip_text = ""

@@ -2,6 +2,7 @@ class_name CardActionOverlay
 extends Control
 
 ## 卡片操作覆盖层 — 放大显示选中成员，两侧显示操作后果
+const ActionLogic = preload("res://scripts/gameplay/action_logic.gd")
 
 signal action_chosen(member_name: String, action: int)
 
@@ -43,40 +44,29 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 		_dismiss_tw = null
 	_clear_content()
 
-	# 恢复固定高度设置 (314 像素)
+	# 恢复固定高度设置 (缩小后约 236 像素)
 	var center := screen_pos
-	var slot_w := 258.0
-	var slot_h := 314.0 # 黑色底板高度固定为 314
-	var frame_size := _tex_btn_bg.get_size()
+	var slot_w := 194.0
+	var slot_h := 236.0 # 黑色底板高度（原314 * 0.75）
+	var frame_size := _tex_btn_bg.get_size() * 0.75
 	
 	var vp_size := get_viewport_rect().size
 	
 	# --- Y轴边界限制 ---
-	# 防止面板(尤其是自由人面板)超出屏幕底部或顶部
 	var min_y: float = slot_h * 0.5 + 20.0
 	var max_y: float = vp_size.y - slot_h * 0.5 - 20.0
 	center.y = clampf(center.y, min_y, max_y)
 	
-	var layout_mode := 0 # 0: 居中, 1: 靠左(面板全在右边), 2: 靠右(面板全在左边)
-	if center.x - slot_w * 1.5 < 20:
-		layout_mode = 1
-	elif center.x + slot_w * 1.5 > vp_size.x - 20:
-		layout_mode = 2
+	# --- X轴边界限制（保证左右面板不超出屏幕）---
+	var min_x: float = slot_w * 1.5 + 20.0  # 291 + 20 = 311
+	var max_x: float = vp_size.x - slot_w * 1.5 - 20.0  # 1920 - 311 = 1609
+	center.x = clampf(center.x, min_x, max_x)
 
-	# --- 第一层：最底层透明黑色面板 (三连板) ---
+	# --- 第一层：最底层透明黑色面板 (三连板，卡片居中，两侧各一格) ---
 	var base_bg := ColorRect.new()
 	base_bg.color = Color(0, 0, 0, 0.88)
 	base_bg.size = Vector2(slot_w * 3, slot_h)
-	
-	var bg_start_x := 0.0
-	if layout_mode == 0:
-		bg_start_x = center.x - slot_w * 1.5
-	elif layout_mode == 1:
-		bg_start_x = center.x - slot_w * 0.5
-	elif layout_mode == 2:
-		bg_start_x = center.x - slot_w * 2.5
-		
-	base_bg.position = Vector2(bg_start_x, center.y - slot_h * 0.5)
+	base_bg.position = Vector2(center.x - slot_w * 1.5, center.y - slot_h * 0.5)
 	base_bg.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(base_bg)
 	_action_panels.append(base_bg)
@@ -87,7 +77,8 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 	middle_frame.expand_mode = TextureRect.EXPAND_KEEP_SIZE
 	middle_frame.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
 	middle_frame.size = frame_size
-	middle_frame.position = center - frame_size * 0.5 + Vector2(0, -15)
+	middle_frame.scale = Vector2(0.75, 0.75)
+	middle_frame.position = center - frame_size * 0.5 + Vector2(0, -11)
 	middle_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(middle_frame)
 	_action_panels.append(middle_frame)
@@ -100,23 +91,23 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 	# 添加不可见的拦截遮罩，防止鼠标穿透点到后面的卡片
 	var card_blocker := ColorRect.new()
 	card_blocker.color = Color(0, 0, 0, 0)
-	card_blocker.size = Vector2(300, 380)
-	card_blocker.position = center - Vector2(150, 190)
+	card_blocker.size = Vector2(225, 285)
+	card_blocker.position = center - Vector2(113, 143)
 	card_blocker.mouse_filter = Control.MOUSE_FILTER_STOP
 	_card_container.add_child(card_blocker)
 
 	# 统一上移量
-	var sync_offset := Vector2(0, -15)
+	var sync_offset := Vector2(0, -11)
 	
-	# 计算让卡片刚好“填满”背板高度（250 像素）的缩放值
+	# 计算让卡片刚好"填满"背板高度（188 像素）的缩放值（原250 * 0.75）
 	var card_native_size := _tex_bg.get_size()
-	var auto_scale_f := 250.0 / card_native_size.y
+	var auto_scale_f := 188.0 / card_native_size.y
 	var card_scale := Vector2(auto_scale_f, auto_scale_f)
 
-	# 卡片背景 (单独下移 15 像素)
+	# 卡片背景 (单独下移 11 像素)
 	_card_bg = Sprite2D.new()
 	_card_bg.texture = _tex_bg
-	_card_bg.position = center + Vector2(0, 15) + sync_offset 
+	_card_bg.position = center + Vector2(0, 11) + sync_offset 
 	_card_bg.scale = card_scale
 	_card_container.add_child(_card_bg)
 
@@ -134,9 +125,11 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 		_portrait.texture = ptex
 		var bg_size := _tex_bg.get_size() * auto_scale_f
 		var p_size: Vector2 = ptex.get_size()
-		var fit: float = minf(bg_size.x * 0.55 / p_size.x, bg_size.y * 0.85 / p_size.y)
+		# 与 member_card.gd 保持一致，使用 0.85 的宽高比例适配
+		var fit: float = minf(bg_size.x * 0.85 / p_size.x, bg_size.y * 0.85 / p_size.y)
 		_portrait.scale = Vector2(fit, fit)
-	_portrait.position = _card_bg.position + Vector2(0, -10)
+	# 与 member_card.gd 保持一致：相对背景 Y 轴上移 -bg_size.y * 0.02
+	_portrait.position = _card_bg.position + Vector2(0, -_tex_bg.get_size().y * auto_scale_f * 0.02)
 	_card_container.add_child(_portrait)
 
 	# --- 新增：部门标志 (左上角) ---
@@ -150,10 +143,10 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 	if div_icon_path != "" and FileAccess.file_exists(div_icon_path):
 		var div_sprite := Sprite2D.new()
 		div_sprite.texture = load(div_icon_path)
-		# 计算在纸张左上角的位置 (相对于纸张中心)
-		var offset_val := 80.0 * auto_scale_f / 0.3 # 动态单位
-		div_sprite.position = _card_bg.position + Vector2(-40, -50) * (auto_scale_f / 0.3)
-		div_sprite.scale = Vector2(0.2, 0.2) * (auto_scale_f / 0.3)
+		div_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS  # 缩小时抗锯齿
+		# 引用 MemberCard 常量，修改常规卡片即自动同步
+		div_sprite.position = _card_bg.position + MemberCard.BADGE_BASE_POS * auto_scale_f
+		div_sprite.scale = Vector2(MemberCard.BADGE_BASE_SCALE, MemberCard.BADGE_BASE_SCALE) * auto_scale_f
 		div_sprite.modulate.a = 0.8
 		_card_container.add_child(div_sprite)
 
@@ -167,21 +160,25 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 	if rank_icon_path != "" and FileAccess.file_exists(rank_icon_path):
 		var rank_sprite := Sprite2D.new()
 		rank_sprite.texture = load(rank_icon_path)
-		# 计算在纸张右上角的位置
-		rank_sprite.position = _card_bg.position + Vector2(50, -50) * (auto_scale_f / 0.3)
-		rank_sprite.scale = Vector2(0.2, 0.2) * (auto_scale_f / 0.3)
+		rank_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS  # 缩小时抗锯齿
+		# 引用 MemberCard 常量，修改常规卡片即自动同步
+		rank_sprite.position = _card_bg.position + MemberCard.STAR_BASE_POS * auto_scale_f
+		rank_sprite.scale = Vector2(MemberCard.STAR_BASE_SCALE, MemberCard.STAR_BASE_SCALE) * auto_scale_f
 		rank_sprite.modulate.a = 0.8
 		_card_container.add_child(rank_sprite)
 
-	# 文字信息 (适配高度后的偏移)
+	# 文字信息 (完全参考 member_card.gd 比例对齐)
 	_card_name = Label.new()
 	_card_name.text = member.member_name
 	_card_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_card_name.add_theme_font_size_override("font_size", 22)
+	_card_name.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	# 字号从 16 加大到 20 以匹配主卡片的等效缩放
+	_card_name.add_theme_font_size_override("font_size", 20)
 	_card_name.add_theme_color_override("font_color", Color(0, 0, 0)) # 改为纯黑色
-	# 已移除黑色文字阴影
-	_card_name.size = Vector2(250, 40)
-	_card_name.position = center + Vector2(-125, 65) + sync_offset
+	
+	var bg_size_scaled := _tex_bg.get_size() * auto_scale_f
+	_card_name.size = Vector2(bg_size_scaled.x * 0.8, 30)
+	_card_name.position = _card_bg.position + Vector2(-bg_size_scaled.x * 0.4, bg_size_scaled.y * 0.2)
 	_card_container.add_child(_card_name)
 
 	_card_info = Label.new()
@@ -191,25 +188,28 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 		role_text = "首领"
 	_card_info.text = role_text
 	_card_info.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_card_info.add_theme_font_size_override("font_size", 16)
+	_card_info.add_theme_font_size_override("font_size", 12)
 	_card_info.add_theme_color_override("font_color", Color(0.8, 0.7, 0.5))
-	_card_info.size = Vector2(250, 30)
-	_card_info.position = center + Vector2(-125, 90) + sync_offset
+	_card_info.size = Vector2(bg_size_scaled.x * 0.8, 22)
+	_card_info.position = _card_bg.position + Vector2(-bg_size_scaled.x * 0.4, bg_size_scaled.y * 0.2 + 30)
 	_card_container.add_child(_card_info)
 
-	# --- 操作按钮分布 (保持 258 像素的格子逻辑) ---
-	_build_action_panels(actions, center, layout_mode)
+	# --- 操作按钮分布（固定左右展开）---
+	_build_action_panels(actions, center)
 
 	modulate = Color(1, 1, 1, 0)
 	visible = true
 	var tw := create_tween()
 	tw.tween_property(self, "modulate", Color.WHITE, 0.25).set_ease(Tween.EASE_OUT)
 
-func _build_action_panels(actions: Array, center: Vector2, layout_mode: int):
-	var slot_w := 258.0
-	var slot_h := 310.0
-	var btn_w := 140.0
-	var btn_h := 38.0
+func _build_action_panels(actions: Array, center: Vector2):
+	var slot_w := 194.0
+	var slot_h := 233.0
+	var btn_w := 105.0
+	var btn_h := 29.0
+
+	# 固定：左侧面板 offset=-1.5，右侧面板 offset=0.5
+	var side_offsets: Array = [-1.5, 0.5]
 
 	var panel_idx := 0
 	for action in actions:
@@ -217,14 +217,10 @@ func _build_action_panels(actions: Array, center: Vector2, layout_mode: int):
 			var btn_pos := center + Vector2(-btn_w * 0.5, slot_h * 0.5 - btn_h + 7)
 			_create_action_button(action, btn_pos, btn_w, btn_h)
 		else:
-			var slot_offset_x := 0.0
-			if layout_mode == 0:
-				slot_offset_x = -1.5 if action == GameManager.ActionType.INTERROGATE else 0.5
-			elif layout_mode == 1:
-				slot_offset_x = 0.5 if panel_idx == 0 else 1.5
-			elif layout_mode == 2:
-				slot_offset_x = -1.5 if panel_idx == 0 else -2.5
-				
+			if panel_idx >= side_offsets.size():
+				# 侧栏最多两项，超出则跳过，避免说明文字和按钮重叠。
+				continue
+			var slot_offset_x: float = side_offsets[panel_idx]
 			var panel_pos := center + Vector2(slot_w * slot_offset_x, -slot_h * 0.5)
 			_create_side_panel(action, panel_pos, slot_w, slot_h, btn_w, btn_h)
 			panel_idx += 1
@@ -232,20 +228,20 @@ func _build_action_panels(actions: Array, center: Vector2, layout_mode: int):
 func _create_side_panel(action: int, pos: Vector2, w: float, h: float, btn_w: float, btn_h: float):
 	# 不再创建独立的背景，因为第一层透黑面板已经覆盖了这些区域
 
-	# 文本说明
+	# 文本说明 — 使用 Label 以支持原生垂直居中
 	var desc := _get_detailed_description(action)
-	var desc_label := RichTextLabel.new()
-	desc_label.bbcode_enabled = true
-	desc_label.fit_content = true
-	desc_label.custom_minimum_size = Vector2(w - 30, 0)
+	var desc_label := Label.new()
+	desc_label.text = desc
+	desc_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	desc_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc_label.add_theme_font_size_override("font_size", 13)
+	desc_label.add_theme_color_override("font_color", Color(0.9, 0.8, 0.6))
 	
-	# 设置字体颜色和居中
-	desc_label.add_theme_font_size_override("normal_font_size", 16)
-	desc_label.add_theme_color_override("default_color", Color(0.9, 0.8, 0.6))
-	desc_label.text = "[center]" + desc + "[/center]"
-	
-	# 置于该区域的中间靠上
-	desc_label.position = pos + Vector2(15, (h - btn_h - 20) * 0.5 - 25)
+	# 固定尺寸 = 面板可用区域（去掉按钮和留白），Label 会在此范围内垂直居中文字
+	var available_h := h - btn_h - 10.0
+	desc_label.size = Vector2(w - 22, available_h)
+	desc_label.position = pos + Vector2(11, 5)
 	add_child(desc_label)
 	_action_panels.append(desc_label)
 
@@ -258,8 +254,8 @@ func _create_action_button(action: int, pos: Vector2, w: float, h: float):
 	btn.position = pos
 	btn.size = Vector2(w, h)
 	btn.mouse_filter = Control.MOUSE_FILTER_STOP
-	btn.text = GameManager.get_action_name(action)
-	btn.add_theme_font_size_override("font_size", 17)
+	btn.text = ActionLogic.get_action_button_text(GameManager, _member_data, action)
+	btn.add_theme_font_size_override("font_size", 13)
 	btn.add_theme_color_override("font_color", Color(1.0, 0.9, 0.8)) # 淡金色文字
 
 	# Use texture StyleBox
@@ -289,25 +285,7 @@ func _create_action_button(action: int, pos: Vector2, w: float, h: float):
 	_action_panels.append(btn)
 
 func _get_detailed_description(action: int) -> String:
-	if _member_data == null:
-		return ""
-	var name: String = _member_data.member_name
-	var rank: int = _member_data.rank
-	var div_name: String = GameManager.DIVISION_NAMES.get(_member_data.division, "无") if _member_data.division != GameManager.Division.NONE else "无"
-
-	match action:
-		GameManager.ActionType.INTERROGATE:
-			var intel: float = GameManager.INTEL_PER_RANK.get(rank, 0.10)
-			return name + " 被囚禁 " + str(GameManager.PRISON_DURATION) + " 回合。\n" + div_name + " 情报每回合 +" + str(int(intel * 100)) + "%。\n释放后等级 -1"
-		GameManager.ActionType.EXECUTE:
-			return name + " 等级 +1\n入职当前部门，获得藏身处装备"
-		GameManager.ActionType.BARGAIN:
-			return name + " 提供一次性奖励\n不改变棋盘状态"
-		GameManager.ActionType.BETRAY:
-			return name + " 与另一名成员互换部门\n建立宿敌关系"
-		GameManager.ActionType.RELEASE:
-			return "释放 " + name + "\n不改变棋盘"
-	return ""
+	return ActionLogic.get_overlay_description(GameManager, _member_data, action)
 
 func _on_action_pressed(action: int):
 	if _member_data:

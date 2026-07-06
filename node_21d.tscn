@@ -18,5 +18,5 @@ position = Vector2(306, 159)
 texture = ExtResource("2_b3wpp")
 
 [node name="进度条" type="Sprite2D" parent="." unique_id=194350889]
-position = Vector2(314, 204)
+position = Vector2(324, 149)
 texture = ExtResource("3_4fy5d")

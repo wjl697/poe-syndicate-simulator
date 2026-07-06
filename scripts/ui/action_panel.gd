@@ -165,6 +165,8 @@ func _get_action_color(action: int) -> Color:
 		GameManager.ActionType.BARGAIN:     return Color(0.2, 0.5, 0.2, 0.9)
 		GameManager.ActionType.BETRAY:      return Color(0.55, 0.3, 0.1, 0.9)
 		GameManager.ActionType.RELEASE:     return Color(0.35, 0.35, 0.35, 0.9)
+		GameManager.ActionType.FORM_TRUST:  return Color(0.15, 0.55, 0.25, 0.9)
+		GameManager.ActionType.FORM_RIVALRY:return Color(0.65, 0.12, 0.12, 0.9)
 	return Color(0.3, 0.3, 0.3, 0.9)
 
 func _on_action_pressed(action: int):

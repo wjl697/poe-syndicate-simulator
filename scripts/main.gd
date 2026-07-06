@@ -16,6 +16,7 @@ var _queue_label: Label           # 遭遇队列剩余提示
 var _safehouse_buttons: Dictionary = {}  # Division -> Button
 var _mastermind_btn: Button
 var _reset_btn: Button
+var _undo_btn: Button
 
 # 状态
 var _current_encounter_member: String = ""
@@ -129,6 +130,13 @@ func _build_ui_layer():
 	_reset_btn.pressed.connect(_on_reset_pressed)
 	hud.add_child(_reset_btn)
 
+	# 撤销操作按钮 — 重置下方
+	_undo_btn = _make_button("↩ 撤销操作", Vector2(-180, 100), Color(0.3, 0.4, 0.5))
+	_undo_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_undo_btn.custom_minimum_size = Vector2(140, 36)
+	_undo_btn.pressed.connect(_on_undo_pressed)
+	hud.add_child(_undo_btn)
+
 	# --- 卡片操作覆盖层 (核心交互模式) ---
 	_card_overlay = CardActionOverlay.new()
 	_card_overlay.action_chosen.connect(_on_action_chosen)
@@ -151,6 +159,7 @@ func _connect_manager_signals():
 	GameManager.safehouse_ready.connect(_on_safehouse_ready)
 	GameManager.mastermind_ready.connect(_on_mastermind_ready)
 	GameManager.intelligence_changed.connect(_on_intel_changed_check)
+	GameManager.state_restored.connect(_on_state_restored)
 
 func _connect_board_signals():
 	if _board:
@@ -160,18 +169,12 @@ func _connect_board_signals():
 
 # ===== 按钮事件 =====
 func _on_encounter_pressed():
-	print("[DEBUG] 开始遭遇按钮被点击")
-	print("[DEBUG] current_encounter.is_empty() = ", GameManager.current_encounter.is_empty())
-	print("[DEBUG] current_encounter = ", GameManager.current_encounter)
 	if not GameManager.current_encounter.is_empty():
-		print("[DEBUG] 遭遇进行中，返回")
 		return  # 遭遇进行中
 	var enc := GameManager.generate_encounter()
-	print("[DEBUG] generate_encounter 返回: ", enc)
 	if enc.is_empty():
 		_info_label.text = "没有可遭遇的成员"
 		_queue_label.text = ""
-		print("[DEBUG] 遭遇为空，无可遭遇成员")
 		return
 
 	var div_name: String = GameManager.DIVISION_NAMES.get(enc.get("division", 0), "未知")
@@ -282,10 +285,8 @@ func _on_encounter_ended():
 		_finish_enc_btn.visible = true
 		_info_label.text = "当前部门遭遇结束"
 	else:
-		_finish_enc_btn.text = "✖ 关闭遭遇"
-		_finish_enc_btn.visible = true
-		_info_label.text = "本回合所有遭遇结束"
-		_queue_label.text = ""
+		# 本回合所有遭遇已结束，自动还原，无需手动关闭
+		_on_encounter_dismissed()
 
 func _on_encounter_dismissed():
 	_finish_enc_btn.visible = false
@@ -295,11 +296,6 @@ func _on_encounter_dismissed():
 	_queue_label.text = ""
 
 func _on_next_encounter():
-	## 如果当前按钮是“关闭遭遇”，则执行退出逻辑
-	if _finish_enc_btn.text == "✖ 关闭遭遇":
-		_on_encounter_dismissed()
-		return
-
 	## 推进到下一个部门遭遇
 	_finish_enc_btn.visible = false
 	_board.clear_highlights()
@@ -337,9 +333,11 @@ func _on_mastermind_ready():
 	_info_label.text = "主脑可挑战！"
 
 func _on_intel_changed_check(div: int, value: float):
-	# 情报不满时隐藏突袭按钮
-	if value < 1.0 and _safehouse_buttons.has(div):
-		_safehouse_buttons[div].visible = false
+	if _safehouse_buttons.has(div):
+		if value >= 1.0:
+			_safehouse_buttons[div].visible = true
+		else:
+			_safehouse_buttons[div].visible = false
 
 func _on_raid_pressed(div: int):
 	GameManager.raid_safehouse(div)
@@ -370,6 +368,30 @@ func _on_reset_pressed():
 	_connect_board_signals()
 	_info_label.text = "游戏已重置"
 	_turn_label.text = "回合: 0"
+
+func _on_undo_pressed():
+	if GameManager.can_undo():
+		GameManager.undo()
+
+func _on_state_restored():
+	_turn_label.text = "回合: " + str(GameManager.turn_count)
+	_info_label.text = "已撤销上一步操作"
+	_card_overlay.dismiss()
+	
+	_mastermind_btn.visible = GameManager.mastermind_intel >= 1.0
+	
+	_board.clear_highlights()
+	if GameManager.current_encounter.is_empty():
+		_finish_enc_btn.visible = false
+		if not GameManager.encounter_queue.is_empty():
+			_finish_enc_btn.text = "➡ 下一个部门"
+			_finish_enc_btn.visible = true
+	else:
+		_finish_enc_btn.visible = false
+		var names: Array = []
+		for m in GameManager.current_encounter.get("members", []):
+			names.append(m.member_name)
+		_board.highlight_cards(names)
 
 # ===== 辅助 =====
 func _make_button(text: String, pos: Vector2, color: Color) -> Button:

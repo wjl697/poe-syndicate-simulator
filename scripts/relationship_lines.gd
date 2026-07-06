@@ -2,9 +2,9 @@ class_name RelationshipLines
 extends Node2D
 
 ## 绘制成员关系连线：
-## - 首领/部下：黄色
-## - 信任：绿色
-## - 敌对：红色
+## - 首领/部下：黄麻绳
+## - 信任：绿麻绳
+## - 敌对：红麻绳
 
 var _card_positions: Dictionary = {}   # member_name -> global_position
 
@@ -12,11 +12,23 @@ var _tex_yellow := preload("res://辛迪加素材/黄色连线.png")
 var _tex_green := preload("res://辛迪加素材/绿色连线.png")
 var _tex_red   := preload("res://辛迪加素材/红色连线.png")
 
-const _LINE_WIDTH := 5.0
-const _ICON_SCALE := 0.55
-const _COLOR_HIERARCHY := Color(0.95, 0.82, 0.24, 0.85)
-const _COLOR_TRUST := Color(0.20, 0.90, 0.30, 0.80)
-const _COLOR_RIVALRY := Color(0.90, 0.20, 0.20, 0.80)
+var _atlas_yellow: AtlasTexture
+var _atlas_green: AtlasTexture
+var _atlas_red: AtlasTexture
+
+func _ready() -> void:
+	# 裁剪出大图中央实际的麻绳纹理区域
+	_atlas_yellow = AtlasTexture.new()
+	_atlas_yellow.atlas = _tex_yellow
+	_atlas_yellow.region = Rect2(383, 187, 65, 14)
+
+	_atlas_green = AtlasTexture.new()
+	_atlas_green.atlas = _tex_green
+	_atlas_green.region = Rect2(375, 219, 66, 13)
+
+	_atlas_red = AtlasTexture.new()
+	_atlas_red.atlas = _tex_red
+	_atlas_red.region = Rect2(386, 199, 49, 14)
 
 func update_positions(positions: Dictionary) -> void:
 	_card_positions = positions
@@ -33,9 +45,9 @@ func _draw() -> void:
 		explicit_rels[pair_key] = rel
 
 		if rel.type == GameManager.RelationType.TRUST:
-			_draw_pair(rel.member_a, rel.member_b, _COLOR_TRUST, _tex_green)
+			_draw_pair(rel.member_a, rel.member_b, _atlas_green)
 		elif rel.type == GameManager.RelationType.RIVALRY:
-			_draw_pair(rel.member_a, rel.member_b, _COLOR_RIVALRY, _tex_red)
+			_draw_pair(rel.member_a, rel.member_b, _atlas_red)
 
 	# 2) 绘制上下级黄线（如果不已被显式关系覆盖）
 	var hierarchy_pairs := _collect_hierarchy_pairs()
@@ -43,7 +55,7 @@ func _draw() -> void:
 		if explicit_rels.has(pair_key):
 			continue
 		var pair: Dictionary = hierarchy_pairs[pair_key]
-		_draw_pair(pair["a"], pair["b"], _COLOR_HIERARCHY, _tex_yellow)
+		_draw_pair(pair["a"], pair["b"], _atlas_yellow)
 
 func _collect_hierarchy_pairs() -> Dictionary:
 	var result: Dictionary = {}
@@ -62,7 +74,7 @@ func _collect_hierarchy_pairs() -> Dictionary:
 			}
 	return result
 
-func _draw_pair(a_name: String, b_name: String, line_color: Color, icon_tex: Texture2D):
+func _draw_pair(a_name: String, b_name: String, rope_tex: AtlasTexture):
 	var pos_a = _card_positions.get(a_name)
 	var pos_b = _card_positions.get(b_name)
 	if pos_a == null or pos_b == null:
@@ -70,12 +82,32 @@ func _draw_pair(a_name: String, b_name: String, line_color: Color, icon_tex: Tex
 
 	var local_a: Vector2 = to_local(pos_a)
 	var local_b: Vector2 = to_local(pos_b)
-	draw_line(local_a, local_b, line_color, _LINE_WIDTH, true)
 
-	if icon_tex:
-		var mid: Vector2 = (local_a + local_b) * 0.5
-		var tex_size: Vector2 = icon_tex.get_size() * _ICON_SCALE
-		draw_texture_rect(icon_tex, Rect2(mid - tex_size * 0.5, tex_size), false)
+	if rope_tex:
+		var dir := local_b - local_a
+		var dist := dir.length()
+		var angle := dir.angle()
+		
+		var src_region := rope_tex.region
+		var tex_w := src_region.size.x
+		var tex_h := src_region.size.y
+		
+		# 临时应用旋转和平移变换，使得本地 X 轴对齐两个节点的连线方向
+		draw_set_transform(local_a, angle, Vector2.ONE)
+		
+		# 手动循环平铺绘制麻绳纹理，防止使用 draw_texture_rect 导致纹理被拉伸模糊失去螺纹细节
+		var x := 0.0
+		while x < dist:
+			var draw_w := minf(tex_w, dist - x)
+			# 截取当前平铺分段的源矩形区域 (特别注意处理最后一小段裁剪)
+			var src_rect := Rect2(src_region.position.x, src_region.position.y, draw_w, tex_h)
+			var dest_rect := Rect2(x, -tex_h * 0.5, draw_w, tex_h)
+			
+			draw_texture_rect_region(rope_tex.atlas, dest_rect, src_rect, Color.WHITE, false)
+			x += tex_w
+			
+		# 还原变换矩阵
+		draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 
 func _make_pair_key(a: String, b: String) -> String:
 	if a <= b:

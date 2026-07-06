@@ -309,8 +309,14 @@ func _layout_cards():
 
 	var prison_total_w: float = (imprisoned.size() - 1) * PRISON_X_GAP
 	var prison_start_x: float = -prison_total_w * 0.5
+	
+	# 当满3个人时，整体微调向右移动 11 像素以填补右侧黑框缝隙，且不会引起左侧穿帮（单人/双人不需要调整）
+	var prison_offset_x := 0.0
+	if imprisoned.size() == 3:
+		prison_offset_x = 11.0
+		
 	for i in range(imprisoned.size()):
-		var p_pos := Vector2(prison_start_x + i * PRISON_X_GAP, PRISON_Y)
+		var p_pos := Vector2(prison_start_x + i * PRISON_X_GAP + prison_offset_x, PRISON_Y)
 		assigned_positions.append(p_pos)
 		_animate_card_to(_cards[imprisoned[i]], p_pos)
 

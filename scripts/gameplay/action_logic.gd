@@ -512,6 +512,7 @@ static func _do_betray(gm, m, result: Dictionary):
 						if td.is_leader: _leader_step_down(gm, td, result)
 						td.division = gm.Division.NONE
 				result.effects.append(target_div_name + " 全员军衔 -1 (降至0星者脱离部门)")
+			gm._remove_relationship(m.member_name, target.member_name)
 				
 		BetrayEffect.DESTROY_OTHER_DIV_EQUIP:
 			if target.division != gm.Division.NONE:
@@ -522,11 +523,13 @@ static func _do_betray(gm, m, result: Dictionary):
 				if leader_t: to_destroy.append(leader_t)
 				for td in to_destroy: td.equipment_count = 0
 				result.effects.append("摧毁了 " + target_div_name + " 全员的装备")
+			gm._remove_relationship(m.member_name, target.member_name)
 				
 		BetrayEffect.GAIN_OTHER_DIV_INTEL:
 			if target.division != gm.Division.NONE:
 				gm._add_intel_points_to_division(target.division, 20)
 				result.effects.append("获取 " + target_div_name + " 情报 +20 点")
+			gm._remove_relationship(m.member_name, target.member_name)
 
 static func _do_bargain(gm, m, result: Dictionary):
 	var effect = m.cached_bargain_effect

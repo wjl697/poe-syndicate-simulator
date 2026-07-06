@@ -53,7 +53,7 @@ const STAR_BASE_POS     := Vector2(160, -130)
 const BADGE_BASE_SCALE  := 0.8
 const BADGE_BASE_POS    := Vector2(-125, -145)
 const PRISON_TURN_BADGE_ANCHOR_Y_RATIO := 0.64
-const PRISON_TURN_BADGE_OFFSET := Vector2(0.0, -100) # x 向右，y 向下
+const PRISON_TURN_BADGE_OFFSET := Vector2(0.0, -75.0) # x 向右，y 向下
 const PRISON_TURN_TEXT_MAX_SIZE := 60
 const PRISON_TURN_TEXT_MIN_SIZE := 16
 const PRISON_TURN_TEXT_INNER_MARGIN := Vector2(18.0, 8.0) # 底图内边距，越小文字越“顶满”
@@ -293,9 +293,9 @@ func update_display() -> void:
 			progress_bg.scale = Vector2(pb_scale, pb_scale)
 			pb_actual_size = pb_native_size * pb_scale
 			
-			# 将背板置于卡牌的最下方
+			# 将背板置于卡牌的最下方，微调向下移动 13 像素防止挡住名字
 			if bg_sprite.texture:
-				var bg_y = 185.0
+				var bg_y = 198.0
 				var offset_x = 8.0 # 抵消素材图左侧纸张毛边导致的视觉偏左，向右微调 8 像素
 				
 				progress_bg.position = Vector2(offset_x, bg_y)
@@ -323,7 +323,7 @@ func update_display() -> void:
 		progress_bar.value = percent * 100
 		
 		# hover 触发区域也需要使用缩放后的实际居中范围
-		var hover_y = 185.0
+		var hover_y = 198.0
 		var offset_x = 8.0
 		_progress_hover_rect = Rect2(-pb_actual_size.x * 0.5 + offset_x, hover_y - pb_actual_size.y * 0.5, pb_actual_size.x, pb_actual_size.y)
 			

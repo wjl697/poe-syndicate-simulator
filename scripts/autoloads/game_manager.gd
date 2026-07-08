@@ -702,6 +702,9 @@ func _validate_encounter(enc: Dictionary) -> void:
 		if m.division == enc.division:
 			# 同部门部下作为增援
 			valid_members.append(m)
+		elif m.division == Division.NONE:
+			# 自由人增援不需要关系链限制（他们是为了加入部门而乱入的）
+			valid_members.append(m)
 		else:
 			# 跨部门增援必须与新的主干成员有信任/宿敌关系
 			var has_rel = get_relationship_between(primary_name, m.member_name) != null

@@ -111,25 +111,23 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 	_card_bg.scale = card_scale
 	_card_container.add_child(_card_bg)
 
-	# 光晕
+	# 光晕 (与 member_card.gd 保持一致的缩放与 Y 轴偏移比例)
 	_card_halo = Sprite2D.new()
 	_card_halo.texture = _tex_halo_lead if member.is_leader else _tex_halo_mem
-	_card_halo.position = _card_bg.position
-	_card_halo.scale = card_scale
+	_card_halo.position = _card_bg.position + Vector2(0, _tex_bg.get_size().y * auto_scale_f * MemberCard.HALO_Y_OFFSET_RATIO)
+	_card_halo.scale = card_scale * MemberCard.HALO_SCALE_MULT
 	_card_container.add_child(_card_halo)
 
-	# 头像
+	# 头像 (与 member_card.gd 保持一致的缩放与 Y 轴偏移比例)
 	_portrait = Sprite2D.new()
 	var ptex: Texture2D = load(member.portrait_path)
 	if ptex:
 		_portrait.texture = ptex
 		var bg_size := _tex_bg.get_size() * auto_scale_f
 		var p_size: Vector2 = ptex.get_size()
-		# 与 member_card.gd 保持一致，使用 0.85 的宽高比例适配
-		var fit: float = minf(bg_size.x * 0.85 / p_size.x, bg_size.y * 0.85 / p_size.y)
+		var fit: float = minf(bg_size.x * MemberCard.PORTRAIT_FIT_SCALE / p_size.x, bg_size.y * MemberCard.PORTRAIT_FIT_SCALE / p_size.y)
 		_portrait.scale = Vector2(fit, fit)
-	# 与 member_card.gd 保持一致：相对背景 Y 轴上移 -bg_size.y * 0.02
-	_portrait.position = _card_bg.position + Vector2(0, -_tex_bg.get_size().y * auto_scale_f * 0.02)
+	_portrait.position = _card_bg.position + Vector2(0, _tex_bg.get_size().y * auto_scale_f * MemberCard.PORTRAIT_Y_OFFSET_RATIO)
 	_card_container.add_child(_portrait)
 
 	# --- 新增：部门标志 (左上角) ---

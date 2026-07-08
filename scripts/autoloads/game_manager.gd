@@ -143,6 +143,7 @@ func _ready():
 	initialize_game()
 
 func initialize_game():
+	randomize() # 确保随机种子每次运行不同
 	members.clear()
 	relationships.clear()
 	intelligence.clear()
@@ -358,12 +359,15 @@ func _pick_random_other_division(base_div: int) -> int:
 	return choices[randi() % choices.size()]
 
 func _set_relationship_type(a: String, b: String, rel_type: int):
+	var type_str = "信任" if rel_type == RelationType.TRUST else ("敌对" if rel_type == RelationType.RIVALRY else "中立")
+	print("[关系变更] ", a, " 与 ", b, " 的关系变更为: ", type_str)
 	var existing = get_relationship_between(a, b)
 	if existing:
 		relationships.erase(existing)
 	relationships.append(RelationshipEntry.new(a, b, rel_type))
 
 func _remove_relationship(a: String, b: String):
+	print("[关系变更] 移除 ", a, " 与 ", b, " 之间的所有关系 (变回中立)")
 	var existing = get_relationship_between(a, b)
 	if existing:
 		relationships.erase(existing)
@@ -496,6 +500,8 @@ func generate_encounter() -> Dictionary:
 	if divisions_this_turn.is_empty():
 		return {}
 
+	divisions_this_turn.shuffle()
+
 	# ====== DEBUG: 打印生成前所有自由人的实时状态 ======
 	for _mn in members:
 		var _m: MemberState = members[_mn]
@@ -518,6 +524,7 @@ func generate_encounter() -> Dictionary:
 
 	# 启动第一个遭遇（先根据上一轮在押人员承接回合）
 	current_encounter = encounter_queue.pop_front()
+	_validate_encounter(current_encounter)
 	_process_prison_intel()
 	_reveal_encounter_members(current_encounter)
 
@@ -658,6 +665,53 @@ func _generate_single_encounter(div: int, used_members: Dictionary = {}) -> Dict
 		"processed": [],
 	}
 
+func _validate_encounter(enc: Dictionary) -> void:
+	if enc.is_empty() or not enc.has("members"):
+		return
+
+	# 1) 首先过滤掉已入狱或不在盘面上的成员
+	var alive_members: Array = []
+	for m in enc.members:
+		if not m.is_imprisoned and m.is_on_board:
+			alive_members.append(m)
+
+	if alive_members.is_empty():
+		enc.members = []
+		return
+
+	# 2) 寻找符合本次遭遇战部门（enc.division）的有效主干部下（锚点成员）
+	var primary_member: MemberState = null
+	var remaining_candidates: Array = []
+	for m in alive_members:
+		if m.division == enc.division and primary_member == null:
+			primary_member = m
+		else:
+			remaining_candidates.append(m)
+
+	# 3) 如果没有找到任何属于该部门的存活成员来担当主干，则本场遭遇战直接跳过
+	if primary_member == null:
+		print("[遭遇成员验证] 遭遇战部门 ", DIVISION_NAMES.get(enc.division, ""), " 没有可担当主干的存活下属，本场遭遇战跳过")
+		enc.members = []
+		return
+
+	var valid_members: Array = [primary_member]
+	var primary_name: String = primary_member.member_name
+
+	# 4) 对其余增援候选人进行关系与部门校验
+	for m in remaining_candidates:
+		if m.division == enc.division:
+			# 同部门部下作为增援
+			valid_members.append(m)
+		else:
+			# 跨部门增援必须与新的主干成员有信任/宿敌关系
+			var has_rel = get_relationship_between(primary_name, m.member_name) != null
+			if has_rel:
+				valid_members.append(m)
+			else:
+				print("[遭遇成员验证] 过滤成员 ", m.member_name, " (跨部门 ", DIVISION_NAMES.get(m.division, ""), " 且与主干成员 ", primary_name, " 无关系)")
+
+	enc.members = valid_members
+
 func _reveal_encounter_members(enc: Dictionary):
 	for m in enc.get("members", []):
 		reveal_member(m.member_name)
@@ -666,10 +720,41 @@ func _log_encounter_start(enc: Dictionary):
 	## 统一的遭遇开始日志辅助函数
 	var div_name: String = DIVISION_NAMES.get(enc.get("division", Division.NONE), "未知")
 	var member_descs: Array = []
+	var enc_member_names: Array[String] = []
 	for m in enc.get("members", []):
 		var div_str: String = DIVISION_NAMES.get(m.division, "自由") if m.division != Division.NONE else "自由"
-		member_descs.append(m.member_name + "(" + str(m.rank) + "星/" + div_str + ")")
-	print("[遭遇开始] ", div_name, " | 成员: ", ", ".join(member_descs))
+		var role_str := "首领" if m.is_leader else "部下"
+		member_descs.append(m.member_name + "(" + str(m.rank) + "星/" + div_str + "/" + role_str + ")")
+		enc_member_names.append(m.member_name)
+	
+	print("\n==================================================")
+	print("[遭遇开始] ", div_name, "遭遇战 | 成员: ", ", ".join(member_descs))
+
+	# 打印在押人员
+	var imprisoned_names: Array = []
+	for mname in members:
+		var m = members[mname]
+		if m.is_imprisoned:
+			var div_str: String = DIVISION_NAMES.get(m.division, "自由") if m.division != Division.NONE else "自由"
+			imprisoned_names.append(mname + "(" + str(m.rank) + "星/" + div_str + ", 剩" + str(m.prison_turns_left) + "回合)")
+	if not imprisoned_names.is_empty():
+		print("  ├─ [在押人员] ", ", ".join(imprisoned_names))
+	else:
+		print("  ├─ [在押人员] 无")
+
+	# 打印本场遭遇战成员之间的关系链
+	var rel_descs: Array = []
+	for i in range(enc_member_names.size()):
+		for j in range(i + 1, enc_member_names.size()):
+			var rel = get_relationship_between(enc_member_names[i], enc_member_names[j])
+			if rel:
+				var type_str = "信任(绿线)" if rel.type == RelationType.TRUST else "敌对(红线)"
+				rel_descs.append(enc_member_names[i] + " ↔ " + enc_member_names[j] + " (" + type_str + ")")
+	if not rel_descs.is_empty():
+		print("  └─ [成员关系] ", ", ".join(rel_descs))
+	else:
+		print("  └─ [成员关系] 均无关系")
+	print("==================================================")
 
 func advance_encounter_queue() -> Dictionary:
 	save_state()
@@ -684,6 +769,7 @@ func advance_encounter_queue() -> Dictionary:
 		print("[遭遇切换补位] ", msg)
 
 	current_encounter = encounter_queue.pop_front()
+	_validate_encounter(current_encounter)
 	_process_prison_intel()
 	ActionLogic.refresh_action_caches(self) # 每次新遭遇开启时刷新随机缓存
 	_reveal_encounter_members(current_encounter)
@@ -714,14 +800,16 @@ func execute_action(member_name: String, action: int):
 
 	# ===== 日志：动作执行摘要 =====
 	var aname := ActionLogic.get_action_name(self, action)
-	print("[行动] ", member_name, " → ", aname)
+	print("[玩家决策] 处理成员: ", member_name, " | 选择操作: ", aname)
 	for eff in result.get("effects", []):
-		print("  └ ", eff)
+		print("  ├─ [效果] ", eff)
 	# 打印执行后成员关键状态
 	var m_after: MemberState = members.get(member_name)
 	if m_after:
-		print("  [状态] rank=", m_after.rank,
-			" | div=", DIVISION_NAMES.get(m_after.division, "自由人"),
+		var div_str: String = DIVISION_NAMES.get(m_after.division, "自由人")
+		var role_str := "首领" if m_after.is_leader else "部下"
+		print("  └─ [状态更新] rank=", m_after.rank,
+			" | div=", div_str, " | role=", role_str,
 			" | imprisoned=", m_after.is_imprisoned)
 
 	action_executed.emit(result)

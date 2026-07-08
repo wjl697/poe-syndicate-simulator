@@ -24,6 +24,46 @@ texture = ExtResource("1_wtcfe")
 expand_mode = 1
 stretch_mode = 6
 
+[node name="LeaderSlot_Transport" type="ColorRect" parent="BackgroundCanvas" unique_id=849046591 groups=["leader_transport_slot"]]
+visible = false
+offset_left = 534.0
+offset_top = 146.0
+offset_right = 694.0
+offset_bottom = 314.0
+color = Color(0.8, 0.1, 0.1, 0.4)
+
+[node name="LeaderSlot_Mastermind" type="ColorRect" parent="BackgroundCanvas" unique_id=999999999 groups=["leader_mastermind_slot"]]
+visible = false
+offset_left = 890.0
+offset_top = 59.0
+offset_right = 1050.0
+offset_bottom = 227.0
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="LeaderSlot_Fortification" type="ColorRect" parent="BackgroundCanvas" unique_id=838983156 groups=["leader_fortification_slot"]]
+visible = false
+offset_left = 768.0
+offset_top = 270.0
+offset_right = 928.0
+offset_bottom = 438.0
+color = Color(0.1, 0.8, 0.1, 0.4)
+
+[node name="LeaderSlot_Research" type="ColorRect" parent="BackgroundCanvas" unique_id=108052030 groups=["leader_research_slot"]]
+visible = false
+offset_left = 989.0
+offset_top = 272.0
+offset_right = 1149.0
+offset_bottom = 440.0
+color = Color(0.1, 0.1, 0.8, 0.4)
+
+[node name="LeaderSlot_Intervention" type="ColorRect" parent="BackgroundCanvas" unique_id=1973042966 groups=["leader_intervention_slot"]]
+visible = false
+offset_left = 1242.0
+offset_top = 146.0
+offset_right = 1402.0
+offset_bottom = 314.0
+color = Color(0.8, 0.8, 0.1, 0.4)
+
 [node name="GuardZone_1" type="ColorRect" parent="BackgroundCanvas" unique_id=1944425922 groups=["guard_zone"]]
 visible = false
 offset_left = 567.0
@@ -42,9 +82,9 @@ color = Color(0.8, 0.1, 0.1, 0.4)
 
 [node name="GuardZone_3" type="ColorRect" parent="BackgroundCanvas" unique_id=1241469788 groups=["guard_zone"]]
 visible = false
-offset_left = 750.0
+offset_left = 738.0
 offset_top = 868.0
-offset_right = 1194.0
+offset_right = 1182.0
 offset_bottom = 1008.0
 color = Color(0.8, 0.1, 0.1, 0.4)
 
@@ -244,34 +284,8 @@ offset_bottom = 834.0
 size_flags_horizontal = 3
 color = Color(0.5, 0.5, 0.5, 0.4)
 
-[node name="LeaderSlot_Transport" type="ColorRect" parent="BackgroundCanvas" unique_id=93215596 groups=["leader_transport_slot"]]
+[node name="背景" type="Sprite2D" parent="BackgroundCanvas" unique_id=2011287921]
 visible = false
-offset_left = 533.0
-offset_top = 149.0
-offset_right = 693.0
-offset_bottom = 317.0
-color = Color(0.8, 0.1, 0.1, 0.4)
-
-[node name="LeaderSlot_Fortification" type="ColorRect" parent="BackgroundCanvas" unique_id=838983156 groups=["leader_fortification_slot"]]
-visible = false
-offset_left = 768.0
-offset_top = 273.0
-offset_right = 928.0
-offset_bottom = 441.0
-color = Color(0.1, 0.8, 0.1, 0.4)
-
-[node name="LeaderSlot_Research" type="ColorRect" parent="BackgroundCanvas" unique_id=108052030 groups=["leader_research_slot"]]
-visible = false
-offset_left = 989.0
-offset_top = 275.0
-offset_right = 1149.0
-offset_bottom = 443.0
-color = Color(0.1, 0.1, 0.8, 0.4)
-
-[node name="LeaderSlot_Intervention" type="ColorRect" parent="BackgroundCanvas" unique_id=1973042966 groups=["leader_intervention_slot"]]
-visible = false
-offset_left = 1248.0
-offset_top = 149.0
-offset_right = 1408.0
-offset_bottom = 317.0
-color = Color(0.8, 0.8, 0.1, 0.4)
+position = Vector2(952.00006, 540)
+scale = Vector2(0.40721652, 0.40721646)
+texture = ExtResource("1_wtcfe")

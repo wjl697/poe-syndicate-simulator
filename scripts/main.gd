@@ -169,7 +169,7 @@ func _connect_board_signals():
 
 # ===== 按钮事件 =====
 func _on_encounter_pressed():
-	if not GameManager.current_encounter.is_empty():
+	if not GameManager.current_encounter.is_empty() or not GameManager.encounter_queue.is_empty():
 		return  # 遭遇进行中
 	var enc := GameManager.generate_encounter()
 	if enc.is_empty():
@@ -186,6 +186,7 @@ func _on_encounter_pressed():
 	for m in enc.get("members", []):
 		names.append(m.member_name)
 	_board.highlight_cards(names)
+	_update_ui_state()
 
 func _on_board_card_clicked(member_name: String):
 	# 检查是否在遭遇中
@@ -276,28 +277,37 @@ func _on_action_result(result: Dictionary):
 		await get_tree().create_timer(0.2).timeout
 		_card_overlay.dismiss()
 
+func _update_ui_state():
+	var in_encounter := not GameManager.current_encounter.is_empty() or not GameManager.encounter_queue.is_empty()
+	_encounter_btn.disabled = in_encounter
+	
+	# 下一个部门按钮控制
+	if GameManager.current_encounter.is_empty() and not GameManager.encounter_queue.is_empty():
+		_finish_enc_btn.text = "➡ 下一个部门"
+		_finish_enc_btn.visible = true
+	else:
+		_finish_enc_btn.visible = false
+
 func _on_encounter_ended():
 	_board.clear_highlights()
+	_update_ui_state()
 
 	# 检查遭遇队列是否还有后续部门遭遇
 	if not GameManager.encounter_queue.is_empty():
-		_finish_enc_btn.text = "➡ 下一个部门"
-		_finish_enc_btn.visible = true
 		_info_label.text = "当前部门遭遇结束"
 	else:
 		# 本回合所有遭遇已结束，自动还原，无需手动关闭
 		_on_encounter_dismissed()
 
 func _on_encounter_dismissed():
-	_finish_enc_btn.visible = false
 	_card_overlay.dismiss()
 	_board.clear_highlights()
 	_info_label.text = "点击「开始遭遇」继续"
 	_queue_label.text = ""
+	_update_ui_state()
 
 func _on_next_encounter():
 	## 推进到下一个部门遭遇
-	_finish_enc_btn.visible = false
 	_board.clear_highlights()
 
 	var enc := GameManager.advance_encounter_queue()
@@ -313,6 +323,7 @@ func _on_next_encounter():
 	for m in enc.get("members", []):
 		names.append(m.member_name)
 	_board.highlight_cards(names)
+	_update_ui_state()
 
 func _on_turn_advanced(turn: int):
 	_turn_label.text = "回合: " + str(turn)
@@ -381,16 +392,13 @@ func _on_state_restored():
 	_mastermind_btn.visible = GameManager.mastermind_intel >= 1.0
 	
 	_board.clear_highlights()
-	if GameManager.current_encounter.is_empty():
-		_finish_enc_btn.visible = false
-		if not GameManager.encounter_queue.is_empty():
-			_finish_enc_btn.text = "➡ 下一个部门"
-			_finish_enc_btn.visible = true
-	else:
-		_finish_enc_btn.visible = false
+	_update_ui_state()
+	if not GameManager.current_encounter.is_empty():
 		var names: Array = []
+		var processed = GameManager.current_encounter.get("processed", [])
 		for m in GameManager.current_encounter.get("members", []):
-			names.append(m.member_name)
+			if m.member_name not in processed:
+				names.append(m.member_name)
 		_board.highlight_cards(names)
 
 # ===== 辅助 =====

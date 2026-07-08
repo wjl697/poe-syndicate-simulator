@@ -25,6 +25,7 @@ var _hit_control: Control
 var _highlight_tween: Tween = null
 var _progress_hover_rect: Rect2 = Rect2()
 var _progress_tooltip_text: String = ""
+var _tooltip_panel: PanelContainer = null
 static var _shared_prison_font_size: int = -1  # 类级别共享，所有实例只计算一次
 
 # 预加载纹理
@@ -52,6 +53,12 @@ const STAR_BASE_SCALE   := 1.2
 const STAR_BASE_POS     := Vector2(160, -130)
 const BADGE_BASE_SCALE  := 0.8
 const BADGE_BASE_POS    := Vector2(-125, -145)
+
+# ── 头像与光晕 布局常量（修改此处可同步影响操作面板内的预览卡片） ──
+const PORTRAIT_FIT_SCALE := 1.0
+const PORTRAIT_Y_OFFSET_RATIO := -0.04
+const HALO_SCALE_MULT := 1.15
+const HALO_Y_OFFSET_RATIO := -0.02
 const PRISON_TURN_BADGE_ANCHOR_Y_RATIO := 0.64
 const PRISON_TURN_BADGE_OFFSET := Vector2(0.0, -75.0) # x 向右，y 向下
 const PRISON_TURN_TEXT_MAX_SIZE := 60
@@ -170,6 +177,31 @@ func _build_tree():
 	_hit_control.mouse_exited.connect(_on_mouse_exited)
 	add_child(_hit_control)
 
+	# --- 自定义悬浮情报提示面板 (跟随鼠标，黑底白字，类似于游戏原生) ---
+	_tooltip_panel = PanelContainer.new()
+	_tooltip_panel.visible = false
+	_tooltip_panel.z_index = 20
+	_tooltip_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0, 0, 0, 0.9)
+	style.set_content_margin_all(5)
+	style.corner_radius_top_left = 3
+	style.corner_radius_top_right = 3
+	style.corner_radius_bottom_left = 3
+	style.corner_radius_bottom_right = 3
+	_tooltip_panel.add_theme_stylebox_override("panel", style)
+	
+	var t_label := Label.new()
+	t_label.name = "Label"
+	t_label.add_theme_font_size_override("font_size", 16)
+	t_label.add_theme_color_override("font_color", Color.WHITE)
+	t_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	t_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_tooltip_panel.add_child(t_label)
+	
+	add_child(_tooltip_panel)
+
 	# 确保类级别字号已计算（只在第一个实例时执行一次）
 	if _shared_prison_font_size < 0:
 		_shared_prison_font_size = _compute_prison_font_size()
@@ -184,6 +216,10 @@ func setup(data) -> void:
 func update_display() -> void:
 	if member_data == null:
 		return
+
+	var bg_size := Vector2.ZERO
+	if bg_sprite.texture:
+		bg_size = bg_sprite.texture.get_size()
 
 	var is_hidden: bool = not member_data.is_revealed
 
@@ -202,16 +238,15 @@ func update_display() -> void:
 		if ptex:
 			portrait_sprite.texture = ptex
 			if bg_sprite.texture:
-				var bg_size: Vector2 = bg_sprite.texture.get_size()
 				var p_size: Vector2 = ptex.get_size()
-				var fit_scale: float = minf(bg_size.x * 0.85 / p_size.x, bg_size.y * 0.85 / p_size.y)
+				var fit_scale: float = minf(bg_size.x * PORTRAIT_FIT_SCALE / p_size.x, bg_size.y * PORTRAIT_FIT_SCALE / p_size.y)
 				portrait_sprite.scale = Vector2(fit_scale, fit_scale)
-				portrait_sprite.position = Vector2(0, -bg_size.y * 0.02)
+				portrait_sprite.position = Vector2(0, bg_size.y * PORTRAIT_Y_OFFSET_RATIO)
 
-	# 光晕 — 815x447 图层，直接对齐背景
+	# 光晕 — 815x447 图层，放大 1.35 倍并在 Y 轴微调向上对齐头像中心
 	halo_sprite.texture = _tex_halo_lead if member_data.is_leader else _tex_halo_mem
-	halo_sprite.scale = Vector2.ONE
-	halo_sprite.position = Vector2.ZERO
+	halo_sprite.scale = Vector2(HALO_SCALE_MULT, HALO_SCALE_MULT)
+	halo_sprite.position = Vector2(0, bg_size.y * HALO_Y_OFFSET_RATIO)
 
 	# 星级 — 815x447 图层，直接对齐背景
 	if is_hidden or member_data.rank <= 0:
@@ -249,7 +284,6 @@ func update_display() -> void:
 	else:
 		name_label.text = member_data.member_name
 	if bg_sprite.texture:
-		var bg_size: Vector2 = bg_sprite.texture.get_size()
 		name_label.position = Vector2(-bg_size.x * 0.4, bg_size.y * 0.2)
 		name_label.size = Vector2(bg_size.x * 0.8, 60)
 
@@ -379,29 +413,22 @@ func _get_badge_texture(division: int) -> Texture2D:
 	return null
 
 func set_highlighted(on: bool) -> void:
-	# 先停止所有现有的动画
-	for tw in get_tree().get_processed_tweens():
-		if tw.is_valid() and (tw.get_total_elapsed_time() < 1000 or true): # 一般直接 kill 就好
-			pass # 这样不够精确
-	
-	# 更简单的方法：直接 kill halo_sprite 上的 tween
-	var old_tw = get_node_or_null("__highlight_tween")
-	if old_tw: 
-		old_tw.queue_free() # 不好使，Tween 不是 Node
-		
-	# 真正有效的方法：在 MemberCard 中存一个变量
 	if _highlight_tween:
 		_highlight_tween.kill()
 		_highlight_tween = null
 	
+	# 光晕图层（halo_sprite）是卡牌常驻的纸张背景阴影/底板，必须保持可见
+	halo_sprite.visible = true
 	if on:
-		modulate = Color(1.3, 1.2, 0.8, 1.0)
+		# 保持卡牌自身色调正常（Color.WHITE），只让背景的阴影底板（光晕）闪烁
+		modulate = Color.WHITE
+		halo_sprite.modulate.a = 1.0
 		_highlight_tween = create_tween().set_loops()
-		_highlight_tween.tween_property(halo_sprite, "modulate:a", 1.0, 0.4)
-		_highlight_tween.tween_property(halo_sprite, "modulate:a", 0.5, 0.4)
+		_highlight_tween.tween_property(halo_sprite, "modulate:a", 1.0, 0.45)
+		_highlight_tween.tween_property(halo_sprite, "modulate:a", 0.3, 0.45)
 	else:
 		modulate = Color.WHITE
-		halo_sprite.modulate.a = 1.0 # 恢复不透明度
+		halo_sprite.modulate.a = 1.0
 
 
 func _on_control_gui_input(event: InputEvent) -> void:
@@ -419,18 +446,36 @@ func _on_mouse_entered() -> void:
 func _on_mouse_exited() -> void:
 	if _hit_control:
 		_hit_control.tooltip_text = ""
+	if _tooltip_panel:
+		_tooltip_panel.visible = false
 	if member_data:
 		card_unhovered.emit(member_data.member_name)
 
 func _update_progress_tooltip(local_pos_in_hit: Vector2) -> void:
-	if _hit_control == null:
+	if _hit_control == null or _tooltip_panel == null:
 		return
 	if not progress_bar.visible or _progress_tooltip_text == "":
-		_hit_control.tooltip_text = ""
+		_tooltip_panel.visible = false
 		return
 
 	var card_local_pos: Vector2 = _hit_control.position + local_pos_in_hit
 	if _progress_hover_rect.has_point(card_local_pos):
-		_hit_control.tooltip_text = _progress_tooltip_text
+		var raw_val: float = GameManager.intelligence.get(member_data.division, 0.0)
+		var percent: float = raw_val if raw_val <= 1.0 else (raw_val / 100.0)
+		var percent_int: int = int(round(percent * 100.0))
+		_tooltip_panel.get_node("Label").text = str(percent_int) + "%"
+		_tooltip_panel.visible = true
+		
+		# 核心修复：卡牌本身带有缩放，且相机 Camera2D 带有缩放 (zoom = 0.42)。
+		# 我们将 tooltip 的全局缩放强制修正为相对于屏幕的 1.0 (Vector2.ONE / (global_scale * canvas_scale))
+		# 对应的跟随偏移坐标也必须除以该总缩放，以在屏幕上产生恒定的像素位移。
+		# 我们将偏移值调整为 (28, -14)，这在物理屏幕上能够完美避开鼠标指针的斜向身体，并留出合适的空白间距。
+		var canvas_scale := get_canvas_transform().get_scale()
+		var s := global_scale * canvas_scale
+		if s.x > 0.001 and s.y > 0.001:
+			_tooltip_panel.scale = Vector2.ONE / s
+			_tooltip_panel.position = get_local_mouse_position() + Vector2(28, -14) / s
+		else:
+			_tooltip_panel.position = get_local_mouse_position() + Vector2(28, -14)
 	else:
-		_hit_control.tooltip_text = ""
+		_tooltip_panel.visible = false

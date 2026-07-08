@@ -1,0 +1,32 @@
+Godot Engine v4.6.1.stable.official.14d19694e - https://godotengine.org
+
+--- CHECKING MEMBER_CARD.GD ---
+SCRIPT ERROR: Compile Error: Identifier not found: GameManager
+   at: GDScript::reload (res://scripts/member_card.gd:352)
+   GDScript backtrace (most recent call first):
+       [0] _init (C:/Users/admin/.gemini/antigravity/brain/54495f9f-8a11-46fe-8741-77569d15a6cd/scratch/check_load.gd:5)
+ERROR: Failed to load script "res://scripts/member_card.gd" with error "Compilation failed".
+   at: load (modules/gdscript/gdscript.cpp:2907)
+   GDScript backtrace (most recent call first):
+       [0] _init (C:/Users/admin/.gemini/antigravity/brain/54495f9f-8a11-46fe-8741-77569d15a6cd/scratch/check_load.gd:5)
+member_card.gd loaded successfully!
+--- CHECKING BOARD.GD ---
+SCRIPT ERROR: Compile Error: Identifier not found: GameManager
+   at: GDScript::reload (res://scripts/board.gd:95)
+   GDScript backtrace (most recent call first):
+       [0] _init (C:/Users/admin/.gemini/antigravity/brain/54495f9f-8a11-46fe-8741-77569d15a6cd/scratch/check_load.gd:12)
+ERROR: Failed to load script "res://scripts/board.gd" with error "Compilation failed".
+   at: load (modules/gdscript/gdscript.cpp:2907)
+   GDScript backtrace (most recent call first):
+       [0] _init (C:/Users/admin/.gemini/antigravity/brain/54495f9f-8a11-46fe-8741-77569d15a6cd/scratch/check_load.gd:12)
+board.gd loaded successfully!
+--- CHECKING MAIN.GD ---
+SCRIPT ERROR: Compile Error: Identifier not found: GameManager
+   at: GDScript::reload (res://scripts/main.gd:155)
+   GDScript backtrace (most recent call first):
+       [0] _init (C:/Users/admin/.gemini/antigravity/brain/54495f9f-8a11-46fe-8741-77569d15a6cd/scratch/check_load.gd:19)
+ERROR: Failed to load script "res://scripts/main.gd" with error "Compilation failed".
+   at: load (modules/gdscript/gdscript.cpp:2907)
+   GDScript backtrace (most recent call first):
+       [0] _init (C:/Users/admin/.gemini/antigravity/brain/54495f9f-8a11-46fe-8741-77569d15a6cd/scratch/check_load.gd:19)
+main.gd loaded successfully!

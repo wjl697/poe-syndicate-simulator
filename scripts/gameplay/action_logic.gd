@@ -673,6 +673,14 @@ static func _kick_member_and_replace(gm, m, result: Dictionary):
 	m.equipment_count = 0
 	if m.member_name in gm.prison_queue: gm.prison_queue.erase(m.member_name)
 	
+	# 清除与该成员相关的所有关系链，防止其重置后带入旧关系
+	var to_remove: Array = []
+	for rel in gm.relationships:
+		if rel.member_a == kicked_name or rel.member_b == kicked_name:
+			to_remove.append(rel)
+	for rel in to_remove:
+		gm.relationships.erase(rel)
+	
 	# === 修复BUG：如果此人原本在当前遭遇战中，但他现在被除名（消失）了，我们需要自动将他标记为“已处理”，否则这局遭遇战会因为等待他的操作而永远卡住 ===
 	var enc_members = gm.current_encounter.get("members", [])
 	var processed_list = gm.current_encounter.get("processed", [])

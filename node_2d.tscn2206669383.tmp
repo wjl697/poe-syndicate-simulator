@@ -1,0 +1,254 @@
+[gd_scene format=3 uid="uid://rjmrpsht35fv"]
+
+[ext_resource type="Texture2D" uid="uid://bttgnb4wtxj7a" path="res://辛迪加素材/背景.png" id="1_wtcfe"]
+[ext_resource type="Script" uid="uid://c0yh0umayg3rf" path="res://scripts/main.gd" id="2_main"]
+
+[node name="Node2D" type="Node2D" unique_id=374323487]
+position = Vector2(18, 13)
+script = ExtResource("2_main")
+
+[node name="Camera2D" type="Camera2D" parent="." unique_id=1490724985]
+position = Vector2(939, 524)
+zoom = Vector2(0.42, 0.42)
+
+[node name="BackgroundCanvas" type="CanvasLayer" parent="." unique_id=1594219433]
+layer = -1
+
+[node name="TextureRect" type="TextureRect" parent="BackgroundCanvas" unique_id=2134214747]
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+texture = ExtResource("1_wtcfe")
+expand_mode = 1
+stretch_mode = 6
+
+[node name="LeaderSlot_Transport" type="ColorRect" parent="BackgroundCanvas/TextureRect" unique_id=849046591 groups=["leader_transport_slot"]]
+layout_mode = 0
+offset_left = 533.0
+offset_top = 147.0
+offset_right = 693.0
+offset_bottom = 315.0
+color = Color(0.8, 0.1, 0.1, 0.4)
+
+[node name="GuardZone_1" type="ColorRect" parent="BackgroundCanvas" unique_id=1944425922 groups=["guard_zone"]]
+offset_left = 567.0
+offset_top = 345.0
+offset_right = 737.0
+offset_bottom = 404.0
+color = Color(0.8, 0.1, 0.1, 0.4)
+
+[node name="GuardZone_2" type="ColorRect" parent="BackgroundCanvas" unique_id=172610589 groups=["guard_zone"]]
+offset_left = 1189.0
+offset_top = 339.0
+offset_right = 1347.0
+offset_bottom = 396.0
+color = Color(0.8, 0.1, 0.1, 0.4)
+
+[node name="GuardZone_3" type="ColorRect" parent="BackgroundCanvas" unique_id=1241469788 groups=["guard_zone"]]
+offset_left = 750.0
+offset_top = 868.0
+offset_right = 1194.0
+offset_bottom = 1008.0
+color = Color(0.8, 0.1, 0.1, 0.4)
+
+[node name="Slot_Transport_1" type="ColorRect" parent="BackgroundCanvas" unique_id=1516125792 groups=["transport_slot"]]
+offset_left = 402.0
+offset_top = 326.0
+offset_right = 562.0
+offset_bottom = 494.0
+color = Color(0.8, 0.1, 0.1, 0.4)
+
+[node name="Slot_Transport_2" type="ColorRect" parent="BackgroundCanvas" unique_id=1465282298 groups=["transport_slot"]]
+offset_left = 229.0
+offset_top = 250.0
+offset_right = 389.0
+offset_bottom = 418.0
+color = Color(0.8, 0.1, 0.1, 0.4)
+
+[node name="Slot_Transport_3" type="ColorRect" parent="BackgroundCanvas" unique_id=778984466 groups=["transport_slot"]]
+offset_left = 215.0
+offset_top = 448.0
+offset_right = 375.0
+offset_bottom = 616.0
+color = Color(0.8, 0.1, 0.1, 0.4)
+
+[node name="Slot_Transport_4" type="ColorRect" parent="BackgroundCanvas" unique_id=1355778819 groups=["transport_slot"]]
+offset_left = 386.0
+offset_top = 502.0
+offset_right = 546.0
+offset_bottom = 670.0
+color = Color(0.8, 0.1, 0.1, 0.4)
+
+[node name="Slot_Fortification_1" type="ColorRect" parent="BackgroundCanvas" unique_id=310773162 groups=["fortification_slot"]]
+offset_left = 603.0
+offset_top = 424.0
+offset_right = 763.0
+offset_bottom = 592.0
+color = Color(0.1, 0.8, 0.1, 0.4)
+
+[node name="Slot_Fortification_2" type="ColorRect" parent="BackgroundCanvas" unique_id=459885856 groups=["fortification_slot"]]
+offset_left = 783.0
+offset_top = 460.0
+offset_right = 943.0
+offset_bottom = 628.0
+color = Color(0.1, 0.8, 0.1, 0.4)
+
+[node name="Slot_Fortification_3" type="ColorRect" parent="BackgroundCanvas" unique_id=576297023 groups=["fortification_slot"]]
+offset_left = 559.0
+offset_top = 614.0
+offset_right = 719.0
+offset_bottom = 782.0
+color = Color(0.1, 0.8, 0.1, 0.4)
+
+[node name="Slot_Fortification_4" type="ColorRect" parent="BackgroundCanvas" unique_id=130986442 groups=["fortification_slot"]]
+offset_left = 730.0
+offset_top = 636.0
+offset_right = 890.0
+offset_bottom = 804.0
+color = Color(0.1, 0.8, 0.1, 0.4)
+
+[node name="Slot_Research_1" type="ColorRect" parent="BackgroundCanvas" unique_id=2081253785 groups=["research_slot"]]
+offset_left = 973.0
+offset_top = 463.0
+offset_right = 1133.0
+offset_bottom = 631.0
+color = Color(0.1, 0.1, 0.8, 0.4)
+
+[node name="Slot_Research_2" type="ColorRect" parent="BackgroundCanvas" unique_id=1300200316 groups=["research_slot"]]
+offset_left = 1164.0
+offset_top = 442.0
+offset_right = 1324.0
+offset_bottom = 610.0
+color = Color(0.1, 0.1, 0.8, 0.4)
+
+[node name="Slot_Research_3" type="ColorRect" parent="BackgroundCanvas" unique_id=1807450082 groups=["research_slot"]]
+offset_left = 1000.0
+offset_top = 645.0
+offset_right = 1160.0
+offset_bottom = 813.0
+color = Color(0.1, 0.1, 0.8, 0.4)
+
+[node name="Slot_Research_4" type="ColorRect" parent="BackgroundCanvas" unique_id=1380434014 groups=["research_slot"]]
+offset_left = 1182.0
+offset_top = 634.0
+offset_right = 1342.0
+offset_bottom = 802.0
+color = Color(0.1, 0.1, 0.8, 0.4)
+
+[node name="Slot_Intervention_1" type="ColorRect" parent="BackgroundCanvas" unique_id=3985748 groups=["intervention_slot"]]
+offset_left = 1359.0
+offset_top = 322.0
+offset_right = 1519.0
+offset_bottom = 490.0
+color = Color(0.8, 0.8, 0.1, 0.4)
+
+[node name="Slot_Intervention_2" type="ColorRect" parent="BackgroundCanvas" unique_id=629970931 groups=["intervention_slot"]]
+offset_left = 1537.0
+offset_top = 261.0
+offset_right = 1697.0
+offset_bottom = 429.0
+color = Color(0.8, 0.8, 0.1, 0.4)
+
+[node name="Slot_Intervention_3" type="ColorRect" parent="BackgroundCanvas" unique_id=1369610769 groups=["intervention_slot"]]
+offset_left = 1557.0
+offset_top = 448.0
+offset_right = 1717.0
+offset_bottom = 616.0
+color = Color(0.8, 0.8, 0.1, 0.4)
+
+[node name="Slot_Intervention_4" type="ColorRect" parent="BackgroundCanvas" unique_id=585336745 groups=["intervention_slot"]]
+offset_left = 1377.0
+offset_top = 499.0
+offset_right = 1537.0
+offset_bottom = 667.0
+color = Color(0.8, 0.8, 0.1, 0.4)
+
+[node name="Slot_Unassigned_1" type="ColorRect" parent="BackgroundCanvas" unique_id=1672374906 groups=["unassigned_slot"]]
+offset_left = 973.0
+offset_top = 657.0
+offset_right = 1133.0
+offset_bottom = 825.0
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="Slot_Unassigned_2" type="ColorRect" parent="BackgroundCanvas" unique_id=898219235 groups=["unassigned_slot"]]
+offset_left = 783.0
+offset_top = 659.0
+offset_right = 943.0
+offset_bottom = 827.0
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="Slot_Unassigned_3" type="ColorRect" parent="BackgroundCanvas" unique_id=456235183 groups=["unassigned_slot"]]
+offset_left = 578.0
+offset_top = 655.0
+offset_right = 738.0
+offset_bottom = 823.0
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="Slot_Unassigned_4" type="ColorRect" parent="BackgroundCanvas" unique_id=1923654197 groups=["unassigned_slot"]]
+offset_left = 1189.0
+offset_top = 655.0
+offset_right = 1349.0
+offset_bottom = 823.0
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="Slot_Unassigned_5" type="ColorRect" parent="BackgroundCanvas" unique_id=966579716 groups=["unassigned_slot"]]
+offset_left = 1380.0
+offset_top = 680.0
+offset_right = 1540.0
+offset_bottom = 848.0
+size_flags_horizontal = 3
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="Slot_Unassigned_6" type="ColorRect" parent="BackgroundCanvas" unique_id=1850546876 groups=["unassigned_slot"]]
+offset_left = 386.0
+offset_top = 686.0
+offset_right = 546.0
+offset_bottom = 854.0
+size_flags_horizontal = 3
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="Slot_Unassigned_7" type="ColorRect" parent="BackgroundCanvas" unique_id=1976962669 groups=["unassigned_slot"]]
+offset_left = 1586.0
+offset_top = 676.0
+offset_right = 1746.0
+offset_bottom = 844.0
+size_flags_horizontal = 3
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="Slot_Unassigned_8" type="ColorRect" parent="BackgroundCanvas" unique_id=1790799646 groups=["unassigned_slot"]]
+offset_left = 203.0
+offset_top = 666.0
+offset_right = 363.0
+offset_bottom = 834.0
+size_flags_horizontal = 3
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="LeaderSlot_Transport" type="ColorRect" parent="BackgroundCanvas" unique_id=93215596 groups=["leader_transport_slot"]]
+offset_left = 890.0
+offset_top = 66.0
+offset_right = 1050.0
+offset_bottom = 234.0
+color = Color(0.8, 0.1, 0.1, 0.4)
+
+[node name="LeaderSlot_Fortification" type="ColorRect" parent="BackgroundCanvas" unique_id=838983156 groups=["leader_fortification_slot"]]
+offset_left = 768.0
+offset_top = 273.0
+offset_right = 928.0
+offset_bottom = 441.0
+color = Color(0.1, 0.8, 0.1, 0.4)
+
+[node name="LeaderSlot_Research" type="ColorRect" parent="BackgroundCanvas" unique_id=108052030 groups=["leader_research_slot"]]
+offset_left = 989.0
+offset_top = 272.0
+offset_right = 1149.0
+offset_bottom = 440.0
+color = Color(0.1, 0.1, 0.8, 0.4)
+
+[node name="LeaderSlot_Intervention" type="ColorRect" parent="BackgroundCanvas" unique_id=1973042966 groups=["leader_intervention_slot"]]
+offset_left = 1248.0
+offset_top = 149.0
+offset_right = 1408.0
+offset_bottom = 317.0
+color = Color(0.8, 0.8, 0.1, 0.4)

@@ -24,14 +24,14 @@ const LEADER_Y := {
 }
 
 # 审讯区（底部中央，最多3人横排）
-const PRISON_Y     := 950
+const PRISON_Y     := 940
 const PRISON_X_GAP := 350   # 审讯区横向间距（适配底部边框）
 
 # 自由人散落区域
 const FREE_CENTER  := Vector2(0, 420)
 const FREE_X_GAP   := 300
 
-const MASTERMIND_Y := -1050
+const MASTERMIND_Y := -950
 const CARD_SCALE   := 0.9
 
 # ---- 成员散落排列模式 ----
@@ -75,10 +75,11 @@ var _cards: Dictionary = {}           # member_name -> MemberCard
 var _rel_lines = null                 # RelationshipLines
 var _badges: Dictionary = {}          # Division -> Sprite2D
 var _mastermind_card: Sprite2D
+var _mastermind_container: Node2D
 
-# 纹理
-var _tex_mastermind   := preload("res://辛迪加素材/主脑/卡塔莉娜.png")
 var _tex_mastermind_badge := preload("res://辛迪加素材/主脑标志.png")
+var _tex_bg := preload("res://辛迪加素材/人物背景.png")
+var _tex_mastermind_halo := preload("res://辛迪加素材/主脑光晕.png")
 
 func _ready():
 	# 将所有依赖全局坐标系初始化的调用包裹在一个延迟函数中，避免顺序错乱
@@ -127,32 +128,32 @@ func _build_divisions():
 
 # ===== 构建主脑区域 =====
 func _build_mastermind():
-	# 主脑标志
-	var badge := Sprite2D.new()
-	badge.texture = _tex_mastermind_badge
-	badge.position = Vector2(0, MASTERMIND_Y - 120)
-	badge.scale = Vector2(0.5, 0.5)
-	add_child(badge)
+	# 使用容器节点以 CARD_SCALE（0.9）统一缩放和定位，保持与其他卡牌尺寸和排版完全一致
+	_mastermind_container = Node2D.new()
+	_mastermind_container.position = Vector2(0, MASTERMIND_Y)
+	_mastermind_container.scale = Vector2(CARD_SCALE, CARD_SCALE)
+	add_child(_mastermind_container)
 
-	# 主脑头像
+	# 1. 人物背景底板 (z_index = 0)
+	var bg_sprite := Sprite2D.new()
+	bg_sprite.texture = _tex_bg
+	bg_sprite.z_index = 0
+	_mastermind_container.add_child(bg_sprite)
+
+	# 2. 主脑光晕 (z_index = 1)
+	var halo_sprite := Sprite2D.new()
+	halo_sprite.texture = _tex_mastermind_halo
+	halo_sprite.z_index = 1
+	halo_sprite.scale = Vector2(1.1, 1.1)
+	_mastermind_container.add_child(halo_sprite)
+
+	# 3. 主脑标志 (作为卡牌的中心主体，z_index = 2)
 	_mastermind_card = Sprite2D.new()
-	_mastermind_card.texture = _tex_mastermind
-	_mastermind_card.position = Vector2(0, MASTERMIND_Y)
-	_mastermind_card.scale = Vector2(0.5, 0.5)
-	add_child(_mastermind_card)
-
-	# 主脑名称
-	var lbl := Label.new()
-	lbl.text = "主脑 · 卡塔莉娜"
-	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	lbl.add_theme_font_size_override("font_size", 52)
-	lbl.add_theme_color_override("font_color", Color(1.0, 0.6, 0.2))
-	lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.9))
-	lbl.add_theme_constant_override("shadow_offset_x", 3)
-	lbl.add_theme_constant_override("shadow_offset_y", 3)
-	lbl.position = Vector2(-160, MASTERMIND_Y + 140)
-	lbl.size = Vector2(320, 60)
-	add_child(lbl)
+	_mastermind_card.texture = _tex_mastermind_badge
+	_mastermind_card.z_index = 2
+	_mastermind_card.scale = Vector2(1.1, 1.1)
+	_mastermind_card.position = Vector2.ZERO
+	_mastermind_container.add_child(_mastermind_card)
 
 func _build_relationship_layer():
 	if _rel_lines != null:
@@ -252,6 +253,22 @@ func _create_cards():
 
 # ===== 排列卡片到正确位置 =====
 func _layout_cards():
+	# --- 0. 主脑位置更新（从全局主脑槽位组 leader_mastermind_slot 读取坐标，适配 Board 节点非 BackgroundCanvas 直系子节点的情况） ---
+	if _mastermind_container:
+		var mm_pos = Vector2(0, MASTERMIND_Y) # 默认备份坐标
+		var mm_nodes = get_tree().get_nodes_in_group("leader_mastermind_slot")
+		var mm_slot: Control = null
+		if not mm_nodes.is_empty():
+			mm_slot = mm_nodes[0] as Control
+		
+		if mm_slot:
+			var canvas_trans = get_viewport().get_canvas_transform()
+			var vp_rect = mm_slot.get_global_rect()
+			var global_pos = canvas_trans.affine_inverse() * vp_rect.get_center()
+			mm_pos = to_local(global_pos)
+		
+		_mastermind_container.position = mm_pos
+
 	var assigned_positions: Array[Vector2] = []
 	var max_sub_y: float = -9999.0  # 追踪所有部下的最低 Y，用于计算自由人安全行
 
@@ -300,23 +317,32 @@ func _layout_cards():
 			if final_pos.y > max_sub_y:
 				max_sub_y = final_pos.y
 
-	# --- 2. 审讯区（固定 PRISON_Y=950，横排居中，不变） ---
+	# --- 2. 审讯区（自动横向对准场景中 GuardZone_3 底框的中心，解决和木底板错位的问题） ---
 	var imprisoned: Array = []
 	for mname in GameManager.members:
 		var m = GameManager.members[mname]
 		if m.is_imprisoned and m.is_on_board and _cards.has(mname):
 			imprisoned.append(mname)
 
+	var prison_center_x := 0.0
+	var prison_nodes = get_tree().get_nodes_in_group("guard_zone")
+	var prison_slot: Control = null
+	for node in prison_nodes:
+		if node.name == "GuardZone_3" and node is Control:
+			prison_slot = node
+			break
+			
+	if prison_slot:
+		var canvas_trans = get_viewport().get_canvas_transform()
+		var vp_rect = prison_slot.get_global_rect()
+		var global_pos = canvas_trans.affine_inverse() * vp_rect.get_center()
+		prison_center_x = to_local(global_pos).x
+
 	var prison_total_w: float = (imprisoned.size() - 1) * PRISON_X_GAP
-	var prison_start_x: float = -prison_total_w * 0.5
+	var prison_start_x: float = prison_center_x - prison_total_w * 0.5
 	
-	# 当满3个人时，整体微调向右移动 11 像素以填补右侧黑框缝隙，且不会引起左侧穿帮（单人/双人不需要调整）
-	var prison_offset_x := 0.0
-	if imprisoned.size() == 3:
-		prison_offset_x = 9.0
-		
 	for i in range(imprisoned.size()):
-		var p_pos := Vector2(prison_start_x + i * PRISON_X_GAP + prison_offset_x, PRISON_Y)
+		var p_pos := Vector2(prison_start_x + i * PRISON_X_GAP, PRISON_Y)
 		assigned_positions.append(p_pos)
 		_animate_card_to(_cards[imprisoned[i]], p_pos)
 

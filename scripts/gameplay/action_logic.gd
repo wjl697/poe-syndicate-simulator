@@ -691,19 +691,28 @@ static func _kick_member_and_replace(gm, m, result: Dictionary):
 	
 	result.effects.append(kicked_name + " 被永远逐出辛迪加")
 
+	if not (kicked_name in gm.bench_pool):
+		gm.bench_pool.append(kicked_name)
+
 	var replacement = null
-	for mname in gm.members:
-		var candidate = gm.members[mname]
-		if not candidate.is_on_board and candidate.member_name != kicked_name:
-			replacement = candidate
-			break
+	if not gm.bench_pool.is_empty():
+		var rep_idx := -1
+		for i in range(gm.bench_pool.size()):
+			if gm.bench_pool[i] != kicked_name:
+				rep_idx = i
+				break
+		if rep_idx == -1:
+			rep_idx = 0
+		var rep_name = gm.bench_pool[rep_idx]
+		gm.bench_pool.remove_at(rep_idx)
+		replacement = gm.members.get(rep_name)
 
 	if replacement:
 		replacement.is_on_board = true
 		replacement.division = gm.Division.NONE
 		replacement.is_leader = false
 		replacement.rank = 0
-		replacement.is_revealed = false
+		replacement.is_revealed = true # 新加入的成员自动翻开
 		replacement.equipment_count = 0
 		replacement.is_imprisoned = false
 		replacement.prison_turns_left = 0
@@ -712,3 +721,212 @@ static func _kick_member_and_replace(gm, m, result: Dictionary):
 		result.effects.append(replacement.member_name + " 作为新人加入辛迪加")
 	else:
 		result.effects.append("没有替补成员可用")
+
+static func get_betray_effects_status(gm, member) -> Array:
+	var target = _get_other_remaining_member(gm, member)
+	var is_sup_sub = _is_hierarchy_pair(member, target, gm.Division.NONE) if target else false
+	var diff_div = false
+	if member and target:
+		diff_div = (member.division != target.division) and (member.division != gm.Division.NONE) and (target.division != gm.Division.NONE)
+	
+	var list := []
+	var betray_effects := [
+		BetrayEffect.INCREASE_INTEL_MAKE_RIVALRY,
+		BetrayEffect.STEAL_RANK,
+		BetrayEffect.REMOVE_FROM_SYNDICATE,
+		BetrayEffect.RAISE_OWN_DIV_LOWER_OTHER_DIV,
+		BetrayEffect.DESTROY_OTHER_DIV_EQUIP,
+		BetrayEffect.GAIN_OTHER_DIV_INTEL
+	]
+	
+	var div_name = gm.DIVISION_NAMES.get(member.division, "无")
+	var target_name = target.member_name if target else "未知目标"
+	var target_div_name = gm.DIVISION_NAMES.get(target.division, "无") if target and target.division != gm.Division.NONE else "无"
+
+	for effect_id in betray_effects:
+		var is_valid := false
+		if effect_id == BetrayEffect.INCREASE_INTEL_MAKE_RIVALRY or effect_id == BetrayEffect.REMOVE_FROM_SYNDICATE:
+			is_valid = (target != null)
+		elif effect_id == BetrayEffect.STEAL_RANK:
+			is_valid = is_sup_sub
+		elif effect_id in [BetrayEffect.RAISE_OWN_DIV_LOWER_OTHER_DIV, BetrayEffect.DESTROY_OTHER_DIV_EQUIP, BetrayEffect.GAIN_OTHER_DIV_INTEL]:
+			is_valid = diff_div
+			
+		var desc := ""
+		match effect_id:
+			BetrayEffect.INCREASE_INTEL_MAKE_RIVALRY: desc = "增加 " + div_name + " 情报，\n同时与 " + target_name + " 的关系变为敌对"
+			BetrayEffect.STEAL_RANK: desc = "窃取 " + target_name + " 的等级加至自身（最高3星）并增加 " + div_name + " 情报，\n" + target_name + " 降为0星自由人并失去职务，且双方变为敌对"
+			BetrayEffect.REMOVE_FROM_SYNDICATE: desc = "将 " + target_name + " 永远逐出不朽辛迪加\n（由替补补位）"
+			BetrayEffect.RAISE_OWN_DIV_LOWER_OTHER_DIV: desc = "提升 " + div_name + " 全员军衔，\n降低 " + target_div_name + " 全员军衔"
+			BetrayEffect.DESTROY_OTHER_DIV_EQUIP: desc = "摧毁 " + target_div_name + " 成员身上的所有装备"
+			BetrayEffect.GAIN_OTHER_DIV_INTEL: desc = "获取 " + target_div_name + " 的情报"
+
+		list.append({
+			"id": effect_id,
+			"name": get_betray_effect_name(effect_id),
+			"description": desc,
+			"is_valid": is_valid
+		})
+	return list
+
+static func get_betray_effect_name(effect_id: int) -> String:
+	match effect_id:
+		BetrayEffect.INCREASE_INTEL_MAKE_RIVALRY: return "增加情报并结仇"
+		BetrayEffect.STEAL_RANK: return "窃取等级并结仇"
+		BetrayEffect.REMOVE_FROM_SYNDICATE: return "逐出辛迪加"
+		BetrayEffect.RAISE_OWN_DIV_LOWER_OTHER_DIV: return "提升己方/降低敌方军衔"
+		BetrayEffect.DESTROY_OTHER_DIV_EQUIP: return "摧毁对方部门装备"
+		BetrayEffect.GAIN_OTHER_DIV_INTEL: return "获取对方部门情报"
+	return "未知"
+
+static func get_bargain_effects_status(gm, member) -> Array:
+	var effective_div = member.division
+	if effective_div == gm.Division.NONE:
+		effective_div = gm.current_encounter.get("division", gm.Division.NONE)
+	
+	var div_name = gm.DIVISION_NAMES.get(effective_div, "无")
+	
+	var processed = gm.current_encounter.get("processed", [])
+	var has_processed_rival = false
+	if processed.size() > 0:
+		var last_name = processed[-1]
+		var rel = gm.get_relationship_between(member.member_name, last_name)
+		if rel and rel.type == gm.RelationType.RIVALRY:
+			has_processed_rival = true
+			
+	var board_count = 0
+	var free_agents = false
+	var same_rank_diff_div = false
+	var has_any_rivalry_in_div = false
+	
+	for mname in gm.members:
+		var m = gm.members[mname]
+		if not m.is_on_board or m.member_name == member.member_name: continue
+		if m.is_revealed: board_count += 1
+		if m.rank == 0 and m.is_revealed: free_agents = true
+		if m.rank == member.rank and member.rank > 0 and m.division != member.division and m.division != gm.Division.NONE and m.is_revealed and not m.is_imprisoned:
+			same_rank_diff_div = true
+
+	if effective_div != gm.Division.NONE:
+		var div_members = gm.get_division_members(effective_div)
+		for dm in div_members:
+			var rels = gm.get_relationships_for(dm.member_name)
+			for r in rels:
+				if r.type == gm.RelationType.RIVALRY:
+					has_any_rivalry_in_div = true
+					break
+			if has_any_rivalry_in_div: break
+
+	var list := []
+	var bargain_effects := [
+		BargainEffect.GAIN_OWN_DIV_INTEL,
+		BargainEffect.GAIN_RIVAL_DIV_INTEL,
+		BargainEffect.FORM_TRUST_ANY_GAIN_INTEL,
+		BargainEffect.DROP_RANDOM_ITEM,
+		BargainEffect.REMOVE_FROM_SYNDICATE,
+		BargainEffect.RECRUIT_FREE_AGENT,
+		BargainEffect.REMOVE_ALL_RIVALRIES_IN_DIV,
+		BargainEffect.DESTROY_OWN_DIV_EQUIP,
+		BargainEffect.SWAP_DIVISION,
+		BargainEffect.COMPLETE_INTERROGATIONS
+	]
+
+	for effect_id in bargain_effects:
+		var is_valid := false
+		var target := ""
+		
+		match effect_id:
+			BargainEffect.GAIN_OWN_DIV_INTEL:
+				is_valid = true
+			BargainEffect.DROP_RANDOM_ITEM:
+				is_valid = true
+				target = ["加密物品", "圣甲虫", "通货物品", "传奇物品", "一张地图"].pick_random()
+			BargainEffect.REMOVE_FROM_SYNDICATE:
+				is_valid = true
+			BargainEffect.DESTROY_OWN_DIV_EQUIP:
+				is_valid = true
+			BargainEffect.GAIN_RIVAL_DIV_INTEL:
+				is_valid = has_processed_rival
+			BargainEffect.FORM_TRUST_ANY_GAIN_INTEL:
+				is_valid = board_count > 0
+				if is_valid:
+					var valid_targets = []
+					for k in gm.members:
+						var cm = gm.members[k]
+						if cm.is_on_board and cm.member_name != member.member_name and cm.is_revealed:
+							valid_targets.append(cm)
+					if valid_targets.size() > 0:
+						target = valid_targets.pick_random().member_name
+			BargainEffect.RECRUIT_FREE_AGENT:
+				is_valid = free_agents and effective_div != gm.Division.NONE and gm.get_division_slot_count(effective_div) < gm.MAX_MEMBERS_PER_DIVISION
+				if is_valid:
+					var free_agent_list = []
+					for k in gm.members:
+						var cm = gm.members[k]
+						if cm.is_on_board and cm.rank == 0 and cm.is_revealed:
+							free_agent_list.append(cm)
+					if free_agent_list.size() > 0:
+						target = free_agent_list.pick_random().member_name
+			BargainEffect.SWAP_DIVISION:
+				is_valid = same_rank_diff_div and not member.is_leader
+				if is_valid:
+					var valid_targets = []
+					for k in gm.members:
+						var cm = gm.members[k]
+						if cm.is_on_board and not cm.is_imprisoned and not cm.is_leader and cm.rank == member.rank and cm.division != member.division and cm.division != gm.Division.NONE and cm.is_revealed:
+							valid_targets.append(cm)
+					if valid_targets.size() > 0:
+						target = valid_targets.pick_random().member_name
+			BargainEffect.COMPLETE_INTERROGATIONS:
+				is_valid = gm.prison_queue.size() > 0
+			BargainEffect.REMOVE_ALL_RIVALRIES_IN_DIV:
+				is_valid = has_any_rivalry_in_div
+				
+		var desc := ""
+		match effect_id:
+			BargainEffect.GAIN_OWN_DIV_INTEL: desc = "获取 " + div_name + " 情报"
+			BargainEffect.GAIN_RIVAL_DIV_INTEL:
+				var processed_list = gm.current_encounter.get("processed", [])
+				var rival_div_name := "仇敌部门"
+				if processed_list.size() > 0:
+					var last_m = gm.members.get(processed_list[-1])
+					if last_m and last_m.division != gm.Division.NONE:
+						rival_div_name = gm.DIVISION_NAMES.get(last_m.division, "仇敌部门")
+				desc = "获取 " + rival_div_name + " 情报\n并与仇敌关系变为中立"
+			BargainEffect.FORM_TRUST_ANY_GAIN_INTEL:
+				var t_name = target if target != "" else "随机成员"
+				var t_m = gm.members.get(t_name)
+				var t_div_name := "未知部门"
+				if t_m:
+					t_div_name = gm.DIVISION_NAMES.get(t_m.division, "自由人") if t_m.division != gm.Division.NONE else "自由人"
+				desc = "与 " + t_name + " 达成信任 (若有仇敌则冰释前嫌)\n并获取 " + t_div_name + " 情报"
+			BargainEffect.DROP_RANDOM_ITEM: desc = "掉落道具：\n" + (target if target != "" else "随机物品")
+			BargainEffect.REMOVE_FROM_SYNDICATE: desc = "将自己永远从不朽辛迪加中除名\n（由替补补位）"
+			BargainEffect.RECRUIT_FREE_AGENT: desc = "招募自由人 " + (target if target != "" else "随机") + " 加入 " + div_name + "\n并结为信任关系"
+			BargainEffect.REMOVE_ALL_RIVALRIES_IN_DIV: desc = "移除 " + div_name + " 全员的所有仇敌死敌关系"
+			BargainEffect.DESTROY_OWN_DIV_EQUIP: desc = "摧毁 " + div_name + " 所有成员的装备"
+			BargainEffect.SWAP_DIVISION: desc = "与 " + (target if target != "" else "同星成员") + " 交换部门及职务"
+			BargainEffect.COMPLETE_INTERROGATIONS: desc = "立即完成所有审讯\n囚犯释放并获得所有剩余情报"
+
+		list.append({
+			"id": effect_id,
+			"name": get_bargain_effect_name(effect_id),
+			"description": desc,
+			"is_valid": is_valid,
+			"target": target
+		})
+	return list
+
+static func get_bargain_effect_name(effect_id: int) -> String:
+	match effect_id:
+		BargainEffect.GAIN_OWN_DIV_INTEL: return "获取自身情报"
+		BargainEffect.GAIN_RIVAL_DIV_INTEL: return "获取仇敌情报"
+		BargainEffect.FORM_TRUST_ANY_GAIN_INTEL: return "与随机成员结盟"
+		BargainEffect.DROP_RANDOM_ITEM: return "掉落道具"
+		BargainEffect.REMOVE_FROM_SYNDICATE: return "自身退出辛迪加"
+		BargainEffect.RECRUIT_FREE_AGENT: return "招募自由人"
+		BargainEffect.REMOVE_ALL_RIVALRIES_IN_DIV: return "清空部门红线"
+		BargainEffect.DESTROY_OWN_DIV_EQUIP: return "摧毁部门装备"
+		BargainEffect.SWAP_DIVISION: return "调换部门职务"
+		BargainEffect.COMPLETE_INTERROGATIONS: return "释放全部囚犯"
+	return "未知"

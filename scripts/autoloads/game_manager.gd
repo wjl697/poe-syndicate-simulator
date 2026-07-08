@@ -125,7 +125,10 @@ class RelationshipEntry:
 		return RelationshipEntry.new(member_a, member_b, type)
 
 # ===== 状态变量 =====
+var is_sandbox_mode: bool = false            # 是否处于沙盒调试/自由布阵模式
+var bench_pool: Array[String] = []          # 替补席成员名单
 var members: Dictionary = {}                # name -> MemberState
+
 var relationships: Array = []               # Array[RelationshipEntry]
 var intelligence: Dictionary = {}           # Division -> float (0.0-1.0)
 var mastermind_intel: float = 0.0
@@ -171,7 +174,11 @@ func _assign_members_randomly():
 
 	# 从17人中选14人上场
 	var active_pool: Array = pool.slice(0, ACTIVE_MEMBER_COUNT)
-	var bench_pool: Array = pool.slice(ACTIVE_MEMBER_COUNT)
+	var bench_list: Array = pool.slice(ACTIVE_MEMBER_COUNT)
+
+	bench_pool.clear()
+	for mname in bench_list:
+		bench_pool.append(mname)
 
 	# 不上场的成员
 	for mname in bench_pool:
@@ -934,6 +941,10 @@ func save_state():
 	var pq: Array[String] = []
 	pq.append_array(prison_queue)
 	state.prison_queue = pq
+
+	var bp: Array[String] = []
+	bp.append_array(bench_pool)
+	state.bench_pool = bp
 	
 	history_stack.append(state)
 	if history_stack.size() > 10:
@@ -958,6 +969,10 @@ func undo():
 	
 	prison_queue.clear()
 	prison_queue.append_array(state.prison_queue)
+
+	bench_pool.clear()
+	if state.has("bench_pool"):
+		bench_pool.append_array(state.bench_pool)
 	
 	for div in ALL_DIVISIONS:
 		intelligence_changed.emit(div, intelligence.get(div, 0.0))
@@ -975,3 +990,49 @@ func get_action_name(action: int) -> String:
 
 func get_action_description(action: int) -> String:
 	return ActionLogic.get_action_description(self, action)
+
+func initialize_sandbox_mode(active_names: Array[String]):
+	is_sandbox_mode = true
+	
+	# 清理并根据选择设置14人上场，其余3人下场
+	bench_pool.clear()
+	for mname in members:
+		var m = members[mname]
+		if mname in active_names:
+			m.is_on_board = true
+			m.is_revealed = true
+			m.division = Division.NONE
+			m.is_leader = false
+			m.rank = 1  # 默认在沙盒模式初始放上去的卡给1星（自由人给0星在放上去的时候会自动重置，没关系）
+			m.is_imprisoned = false
+			m.equipment_count = 0
+			m.cached_betray_effect = -1
+			m.cached_bargain_effect = -1
+			m.cached_bargain_target = ""
+		else:
+			m.is_on_board = false
+			m.is_revealed = false
+			m.division = Division.NONE
+			m.is_leader = false
+			m.rank = 0
+			m.is_imprisoned = false
+			m.equipment_count = 0
+			m.cached_betray_effect = -1
+			m.cached_bargain_effect = -1
+			m.cached_bargain_target = ""
+			bench_pool.append(mname)
+	
+	relationships.clear()
+	intelligence.clear()
+	for div in ALL_DIVISIONS:
+		intelligence[div] = 0.0
+		intelligence_changed.emit(div, 0.0)
+	
+	mastermind_intel = 0.0
+	turn_count = 0
+	current_encounter.clear()
+	encounter_queue.clear()
+	prison_queue.clear()
+	history_stack.clear()
+	
+	board_changed.emit()

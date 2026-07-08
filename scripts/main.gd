@@ -10,6 +10,7 @@ var _ui_layer: CanvasLayer
 # var _action_panel: ActionPanel
 var _card_overlay: CardActionOverlay
 var _encounter_btn: Button
+var _sandbox_btn: Button           # 沙盒模式入口按钮
 var _turn_label: Label
 var _info_label: Label
 var _queue_label: Label           # 遭遇队列剩余提示
@@ -17,6 +18,7 @@ var _safehouse_buttons: Dictionary = {}  # Division -> Button
 var _mastermind_btn: Button
 var _reset_btn: Button
 var _undo_btn: Button
+var _sandbox_wizard: Control = null
 
 # 状态
 var _current_encounter_member: String = ""
@@ -73,6 +75,13 @@ func _build_ui_layer():
 	_turn_label.add_theme_constant_override("shadow_offset_x", 2)
 	_turn_label.add_theme_constant_override("shadow_offset_y", 2)
 	hud.add_child(_turn_label)
+
+	# 沙盒模式按钮 — 右上角（在回合标签左侧）
+	_sandbox_btn = _make_button("🛠 沙盒模式: 关", Vector2(-380, 16), Color(0.4, 0.4, 0.4))
+	_sandbox_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_sandbox_btn.custom_minimum_size = Vector2(160, 40)
+	_sandbox_btn.pressed.connect(_on_sandbox_pressed)
+	hud.add_child(_sandbox_btn)
 
 	# 状态信息 — 顶部中央
 	_info_label = Label.new()
@@ -189,6 +198,10 @@ func _on_encounter_pressed():
 	_update_ui_state()
 
 func _on_board_card_clicked(member_name: String):
+	if _sandbox_wizard != null and is_instance_valid(_sandbox_wizard):
+		_sandbox_wizard.handle_board_card_clicked(member_name)
+		return
+
 	# 检查是否在遭遇中
 	if GameManager.current_encounter.is_empty():
 		return
@@ -362,6 +375,12 @@ func _on_mastermind_pressed():
 	_info_label.text = "击败了主脑卡塔莉娜！"
 
 func _on_reset_pressed():
+	if _sandbox_wizard != null and is_instance_valid(_sandbox_wizard):
+		_sandbox_wizard.queue_free()
+		_sandbox_wizard = null
+	GameManager.is_sandbox_mode = false
+	_update_sandbox_button_ui()
+
 	# 清理
 	# _encounter_panel.visible = false
 	# _action_panel.hide_panel()
@@ -430,6 +449,63 @@ func _make_button(text: String, pos: Vector2, color: Color) -> Button:
 	btn.add_theme_font_size_override("font_size", 16)
 	btn.add_theme_color_override("font_color", Color.WHITE)
 	return btn
+
+func _on_sandbox_pressed():
+	if _sandbox_wizard != null and is_instance_valid(_sandbox_wizard):
+		_sandbox_wizard.queue_free()
+		_sandbox_wizard = null
+		GameManager.is_sandbox_mode = false
+		_update_sandbox_button_ui()
+		_on_reset_pressed()
+		return
+
+	if GameManager.is_sandbox_mode:
+		# 如果沙盒模式开着但是向导不在，直接关掉沙盒模式并重置
+		GameManager.is_sandbox_mode = false
+		_update_sandbox_button_ui()
+		_on_reset_pressed()
+	else:
+		# 开启沙盒向导
+		var wizard_script := preload("res://scripts/ui/sandbox_setup_wizard.gd")
+		_sandbox_wizard = wizard_script.new()
+		_sandbox_wizard.completed.connect(_on_wizard_completed)
+		_sandbox_wizard.closed.connect(_on_wizard_closed)
+		_ui_layer.add_child(_sandbox_wizard)
+		
+		# 临时将按钮显示为“正在布阵...”
+		_sandbox_btn.text = "🛠 正在布阵..."
+		_set_button_color(_sandbox_btn, Color(0.6, 0.4, 0.1))
+
+func _on_wizard_completed():
+	_sandbox_wizard = null
+	GameManager.is_sandbox_mode = true
+	print("Sandbox Wizard completed: Sandbox Mode active!")
+	_update_sandbox_button_ui()
+
+func _on_wizard_closed():
+	_sandbox_wizard = null
+	GameManager.is_sandbox_mode = false
+	print("Sandbox Wizard aborted/closed: Normal Mode active!")
+	_update_sandbox_button_ui()
+
+func _update_sandbox_button_ui():
+	if GameManager.is_sandbox_mode:
+		_sandbox_btn.text = "🛠 沙盒模式: 开"
+		_set_button_color(_sandbox_btn, Color(0.15, 0.6, 0.5)) # Teal for Active
+	else:
+		_sandbox_btn.text = "🛠 沙盒模式: 关"
+		_set_button_color(_sandbox_btn, Color(0.4, 0.4, 0.4)) # Gray for Inactive
+
+func _set_button_color(btn: Button, color: Color):
+	var style = btn.get_theme_stylebox("normal")
+	if style is StyleBoxFlat:
+		style.bg_color = color
+	var hover = btn.get_theme_stylebox("hover")
+	if hover is StyleBoxFlat:
+		hover.bg_color = color.lightened(0.2)
+	var pressed = btn.get_theme_stylebox("pressed")
+	if pressed is StyleBoxFlat:
+		pressed.bg_color = color.darkened(0.1)
 
 func _input(event: InputEvent):
 	# 1. F11 切换全屏/窗口模式

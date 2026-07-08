@@ -223,7 +223,11 @@ func _build_action_panels(actions: Array, center: Vector2):
 				continue
 			var slot_offset_x: float = side_offsets[panel_idx]
 			var panel_pos := center + Vector2(slot_w * slot_offset_x, -slot_h * 0.5)
-			_create_side_panel(action, panel_pos, slot_w, slot_h, btn_w, btn_h)
+			
+			if GameManager.is_sandbox_mode and (action == GameManager.ActionType.BETRAY or action == GameManager.ActionType.BARGAIN):
+				_create_sandbox_effects_panel(action, panel_pos, slot_w, slot_h)
+			else:
+				_create_side_panel(action, panel_pos, slot_w, slot_h, btn_w, btn_h)
 			panel_idx += 1
 
 func _create_side_panel(action: int, pos: Vector2, w: float, h: float, btn_w: float, btn_h: float):
@@ -329,3 +333,83 @@ func _clear_content():
 	_card_halo = null
 	_card_name = null
 	_card_info = null
+
+func _create_sandbox_effects_panel(action: int, pos: Vector2, w: float, h: float):
+	var container := VBoxContainer.new()
+	container.position = pos + Vector2(10, 5)
+	container.size = Vector2(w - 20, h - 10)
+	container.mouse_filter = Control.MOUSE_FILTER_PASS
+	add_child(container)
+	_action_panels.append(container)
+	
+	var title_label := Label.new()
+	title_label.text = "选择背叛效果:" if action == GameManager.ActionType.BETRAY else "选择商谈效果:"
+	title_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title_label.add_theme_font_size_override("font_size", 12)
+	title_label.add_theme_color_override("font_color", Color(1.0, 0.95, 0.8))
+	container.add_child(title_label)
+	
+	var desc_label := Label.new()
+	desc_label.text = "请悬停查看效果说明"
+	desc_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	desc_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	desc_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	desc_label.add_theme_font_size_override("font_size", 11)
+	desc_label.add_theme_color_override("font_color", Color(0.9, 0.8, 0.6))
+	desc_label.custom_minimum_size = Vector2(w - 20, 55)
+	desc_label.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	container.add_child(desc_label)
+	
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(w - 20, 130)
+	scroll.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	container.add_child(scroll)
+	
+	var vbox := VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(vbox)
+	
+	var effects = []
+	if action == GameManager.ActionType.BETRAY:
+		effects = ActionLogic.get_betray_effects_status(GameManager, _member_data)
+	else:
+		effects = ActionLogic.get_bargain_effects_status(GameManager, _member_data)
+		
+	var style := StyleBoxTexture.new()
+	style.texture = _tex_btn_main
+	style.texture_margin_left = 6
+	style.texture_margin_right = 6
+	style.texture_margin_top = 6
+	style.texture_margin_bottom = 6
+
+	for eff in effects:
+		var btn := Button.new()
+		btn.text = eff.name
+		btn.custom_minimum_size = Vector2(w - 30, 24)
+		btn.add_theme_font_size_override("font_size", 11)
+		btn.mouse_filter = Control.MOUSE_FILTER_STOP
+		
+		btn.add_theme_stylebox_override("normal", style)
+		var hover = style.duplicate()
+		hover.modulate_color = Color(1.2, 1.2, 1.2)
+		btn.add_theme_stylebox_override("hover", hover)
+		
+		if not eff.is_valid:
+			btn.disabled = true
+			btn.modulate = Color(0.5, 0.5, 0.5, 0.6)
+			
+		btn.mouse_entered.connect(func():
+			desc_label.text = eff.description
+		)
+		
+		var eff_id: int = eff.id
+		var eff_target: String = eff.get("target", "")
+		btn.pressed.connect(func():
+			if action == GameManager.ActionType.BETRAY:
+				_member_data.cached_betray_effect = eff_id
+			else:
+				_member_data.cached_bargain_effect = eff_id
+				_member_data.cached_bargain_target = eff_target
+			_on_action_pressed(action)
+		)
+		vbox.add_child(btn)

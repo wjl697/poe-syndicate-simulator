@@ -12,10 +12,12 @@ signal closed()
 
 # 状态
 var _current_step: int = 1 # 1, 2, 3
-var _selected_members: Array[String] = [] # 步骤1中选中的14人
+var _selected_members: Array[String] = [] # 步骤1中确定的14名上场成员
+var _benched_members: Array[String] = []  # 被排除的3名替补席成员
 var _active_placement_member: String = "" # 步骤2中选中的、待放置的成员名
 var _step3_relation_mode: int = -1 # -1=无, 0=信任(绿), 1=仇敌(红), 2=清除(中立)
 var _step3_first_selected_member: String = ""
+var _pulse_time: float = 0.0              # 呼吸灯时间计数
 
 # 常量
 const SLOT_GROUPS = [
@@ -56,11 +58,42 @@ var _all_slots: Array[ColorRect] = []
 func _ready():
 	# 允许鼠标穿透根节点，因为我们要点击背后的棋盘卡片
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	# 强制将根 Control 铺满视口
 	set_anchors_preset(Control.PRESET_FULL_RECT)
+	offset_left = 0
+	offset_top = 0
+	offset_right = 0
+	offset_bottom = 0
+	size = get_viewport_rect().size
+	
+	# 在初始化时，清空所有人的在场状态，从而清除背景中的卡片（主脑卡片除外）
+	for mname in GameManager.MEMBER_DEFS:
+		var m = GameManager.members.get(mname)
+		if m:
+			m.is_on_board = false
+			m.division = GameManager.Division.NONE
+			m.is_leader = false
+			m.rank = 0
+	GameManager.board_changed.emit()
 	
 	_cache_board_slots()
 	_build_ui()
 	_update_step_ui()
+	
+	# 延迟一帧强制修正面板坐标，绕过 Godot 布局引擎在当帧对 Container 的覆盖
+	call_deferred("_fix_step1_panel_rect")
+
+# ===== 延迟修正步骤1面板坐标（跨过布局引擎运行后）=====
+func _fix_step1_panel_rect():
+	if not is_instance_valid(_step1_panel):
+		return
+	var panel_w := 1000.0
+	var panel_h := 720.0
+	var vp := get_viewport_rect().size
+	# Y 轴向上偏移 40px 以补偿顶部 HUD 栏（~70px）
+	_step1_panel.position = Vector2((vp.x - panel_w) * 0.5, (vp.y - panel_h) * 0.5 - 40.0)
+	_step1_panel.size = Vector2(panel_w, panel_h)
 
 # ===== 缓存棋盘插槽 =====
 func _cache_board_slots():
@@ -308,11 +341,14 @@ func _build_ui():
 	btn_hbox.add_child(_close_btn)
 
 	# --- 2. 步骤1：中央选择区域 ---
+	# 使用绝对坐标定位，绕过 _ready() 中布局引擎未运行的问题
+	var panel_w := 1000.0
+	var panel_h := 720.0
+	var vp := get_viewport_rect().size
 	_step1_panel = PanelContainer.new()
-	_step1_panel.custom_minimum_size = Vector2(1000, 640)
-	_step1_panel.set_anchors_preset(Control.PRESET_CENTER)
-	# 居中对齐偏下一点，避免被 header 遮挡
-	_step1_panel.position = Vector2(960 - 500, 540 - 300)
+	# Y 轴向上偏移 40px 以补偿顶部 HUD 栏（~70px）
+	_step1_panel.position = Vector2((vp.x - panel_w) * 0.5, (vp.y - panel_h) * 0.5 - 40.0)
+	_step1_panel.size = Vector2(panel_w, panel_h)
 	_step1_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_step1_panel)
 	
@@ -334,25 +370,23 @@ func _build_ui():
 	_step1_panel.add_theme_stylebox_override("panel", style_panel)
 	
 	var step1_vbox := VBoxContainer.new()
-	step1_vbox.add_theme_constant_override("separation", 15)
+	step1_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	step1_vbox.add_theme_constant_override("separation", 14)
 	_step1_panel.add_child(step1_vbox)
 	
 	var info_lbl := Label.new()
-	info_lbl.text = "请从 17 名辛迪加成员中选择 14 名上场成员（排除 3 名放在替补席）"
+	info_lbl.text = "步骤 1: 请选择 3 名成员放入替补席（绿色 = 上场 / 红色 = 替补席）"
 	info_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	info_lbl.add_theme_font_size_override("font_size", 16)
+	info_lbl.add_theme_font_size_override("font_size", 15)
 	info_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
 	step1_vbox.add_child(info_lbl)
 	
-	var scroll1 := ScrollContainer.new()
-	scroll1.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	step1_vbox.add_child(scroll1)
-	
 	_step1_grid = GridContainer.new()
-	_step1_grid.columns = 6
-	_step1_grid.add_theme_constant_override("h_separation", 20)
-	_step1_grid.add_theme_constant_override("v_separation", 20)
-	scroll1.add_child(_step1_grid)
+	_step1_grid.columns = 6  # 6列×3行排列17人
+	_step1_grid.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_step1_grid.add_theme_constant_override("h_separation", 14)
+	_step1_grid.add_theme_constant_override("v_separation", 14)
+	step1_vbox.add_child(_step1_grid)
 	
 	# --- 3. 步骤2：底部卡片坞 ---
 	_step2_panel = PanelContainer.new()
@@ -418,15 +452,15 @@ func _update_step_ui():
 	# 刷新步骤文字
 	match _current_step:
 		1:
-			_step_label.text = "步骤 1 / 3: 选择14名成员 (" + str(_selected_members.size()) + " / 14)"
+			_step_label.text = "步骤 1 / 3: 选择3名成员作为替补 (" + str(_benched_members.size()) + " / 3)"
 			_step1_panel.visible = true
 			_step2_panel.visible = false
 			_relation_hbox.visible = false
 			_relation_tip_label.visible = false
 			
 			_back_btn.disabled = true
-			_next_btn.text = "确定选择"
-			_next_btn.disabled = (_selected_members.size() != 14)
+			_next_btn.text = "确定替补"
+			_next_btn.disabled = (_benched_members.size() != 3)
 			_reset_btn.visible = true
 			
 			_connect_slot_inputs(false)
@@ -467,13 +501,13 @@ func _rebuild_step1_grid():
 	for child in _step1_grid.get_children():
 		child.queue_free()
 		
-	# 重新填充17人
+	# 重新填充17人，每一名成员都表现为一个带实景头像+名字的圆角卡片
 	for mname in GameManager.MEMBER_DEFS:
 		var portrait_path = "res://辛迪加素材/人员/" + mname + ".png"
 		var container := PanelContainer.new()
-		container.custom_minimum_size = Vector2(140, 160)
+		container.custom_minimum_size = Vector2(130, 185)
 		
-		# 样式
+		# 整张卡片不设内边距，让头像占满空间
 		var style := StyleBoxFlat.new()
 		style.corner_radius_top_left = 6
 		style.corner_radius_top_right = 6
@@ -483,31 +517,46 @@ func _rebuild_step1_grid():
 		style.border_width_right = 2
 		style.border_width_top = 2
 		style.border_width_bottom = 2
+		style.content_margin_left = 0
+		style.content_margin_right = 0
+		style.content_margin_top = 0
+		style.content_margin_bottom = 10
 		
-		if mname in _selected_members:
-			style.bg_color = Color(0.1, 0.3, 0.2, 0.8) # 选中绿色
-			style.border_color = Color(0.2, 0.8, 0.5, 0.9)
+		if mname in _benched_members:
+			style.bg_color = Color(0.25, 0.08, 0.08, 0.95) # 替补：深红背景
+			style.border_color = Color(0.9, 0.3, 0.3, 1.0) # 亮红边框
 		else:
-			style.bg_color = Color(0.12, 0.12, 0.16, 0.8)
-			style.border_color = Color(0.3, 0.3, 0.3, 0.5)
+			style.bg_color = Color(0.08, 0.18, 0.12, 0.95) # 上场：深绿背景
+			style.border_color = Color(0.2, 0.75, 0.4, 1.0) # 绿边框
 			
 		container.add_theme_stylebox_override("panel", style)
 		
 		var vbox := VBoxContainer.new()
-		vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		vbox.alignment = BoxContainer.ALIGNMENT_BEGIN
+		vbox.add_theme_constant_override("separation", 3)
+		vbox.size_flags_horizontal = Control.SIZE_FILL
+		vbox.size_flags_vertical = Control.SIZE_FILL
 		container.add_child(vbox)
 		
+		# 头像: EXPAND_IGNORE_SIZE + SIZE_EXPAND_FILL 拥满卡片除名字外的所有剩余高度
 		var p_tex = TextureRect.new()
 		p_tex.texture = load(portrait_path)
-		p_tex.custom_minimum_size = Vector2(100, 100)
-		p_tex.expand_mode = TextureRect.EXPAND_KEEP_SIZE
-		p_tex.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+		p_tex.custom_minimum_size = Vector2(40, 40)
+		p_tex.size_flags_horizontal = Control.SIZE_FILL
+		p_tex.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		p_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		# STRETCH_KEEP_ASPECT_COVERED: 裁剪填满，不留空白边
+		p_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		vbox.add_child(p_tex)
 		
+		# 名字与状态合并为一行，节省竖向空间让头像更大
 		var lbl := Label.new()
-		lbl.text = mname
+		var status_text := " (替补)" if mname in _benched_members else " (上场)"
+		var status_color := Color(1.0, 0.5, 0.5) if mname in _benched_members else Color(0.5, 1.0, 0.6)
+		lbl.text = mname + status_text
 		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lbl.add_theme_font_size_override("font_size", 13)
+		lbl.add_theme_font_size_override("font_size", 12)
+		lbl.add_theme_color_override("font_color", status_color)
 		vbox.add_child(lbl)
 		
 		# 包装为一个不可见的按钮来检测点击
@@ -521,11 +570,11 @@ func _rebuild_step1_grid():
 		_step1_grid.add_child(container)
 
 func _toggle_member_selection(mname: String):
-	if mname in _selected_members:
-		_selected_members.erase(mname)
+	if mname in _benched_members:
+		_benched_members.erase(mname)
 	else:
-		if _selected_members.size() < 14:
-			_selected_members.append(mname)
+		if _benched_members.size() < 3:
+			_benched_members.append(mname)
 			
 	_update_step_ui()
 
@@ -583,8 +632,10 @@ func _rebuild_step2_dock():
 		var p_tex = TextureRect.new()
 		p_tex.texture = load(member.portrait_path)
 		p_tex.custom_minimum_size = Vector2(70, 70)
-		p_tex.expand_mode = TextureRect.EXPAND_KEEP_SIZE
-		p_tex.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+		p_tex.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		p_tex.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		p_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE  # 不随原始图片尺寸膨胀
+		p_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		vbox.add_child(p_tex)
 		
 		# 名字
@@ -645,7 +696,13 @@ func _on_back_pressed():
 
 func _on_next_pressed():
 	if _current_step == 1:
-		if _selected_members.size() == 14:
+		if _benched_members.size() == 3:
+			# 根据排除逻辑，剩余14个成员进入上场名单
+			_selected_members.clear()
+			for mname in GameManager.MEMBER_DEFS:
+				if mname not in _benched_members:
+					_selected_members.append(mname)
+			
 			# 初始化游戏数据为沙盒模式并确定 active 人员
 			GameManager.initialize_sandbox_mode(_selected_members)
 			_current_step = 2
@@ -662,7 +719,7 @@ func _on_next_pressed():
 
 func _on_reset_pressed():
 	if _current_step == 1:
-		_selected_members.clear()
+		_benched_members.clear()
 		_update_step_ui()
 	elif _current_step == 2:
 		# 重置所有的放置状态

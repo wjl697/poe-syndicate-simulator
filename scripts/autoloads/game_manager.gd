@@ -999,7 +999,7 @@ func initialize_sandbox_mode(active_names: Array[String]):
 	for mname in members:
 		var m = members[mname]
 		if mname in active_names:
-			m.is_on_board = true
+			m.is_on_board = false # 初始状态设为未摆放，从而在步骤2开始时背景无卡，玩家再行摆放
 			m.is_revealed = true
 			m.division = Division.NONE
 			m.is_leader = false

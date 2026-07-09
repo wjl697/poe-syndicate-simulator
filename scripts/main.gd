@@ -396,6 +396,7 @@ func _on_reset_pressed():
 	GameManager.initialize_game()
 	_build_board()
 	_connect_board_signals()
+	_update_ui_state()
 	_info_label.text = "游戏已重置"
 	_turn_label.text = "回合: 0"
 
@@ -456,6 +457,7 @@ func _on_sandbox_pressed():
 		_sandbox_wizard = null
 		GameManager.is_sandbox_mode = false
 		_update_sandbox_button_ui()
+		_set_top_buttons_visible(true)
 		_on_reset_pressed()
 		return
 
@@ -463,6 +465,7 @@ func _on_sandbox_pressed():
 		# 如果沙盒模式开着但是向导不在，直接关掉沙盒模式并重置
 		GameManager.is_sandbox_mode = false
 		_update_sandbox_button_ui()
+		_set_top_buttons_visible(true)
 		_on_reset_pressed()
 	else:
 		# 开启沙盒向导
@@ -471,7 +474,10 @@ func _on_sandbox_pressed():
 		_sandbox_wizard.completed.connect(_on_wizard_completed)
 		_sandbox_wizard.closed.connect(_on_wizard_closed)
 		_ui_layer.add_child(_sandbox_wizard)
-		
+
+		# 布阵导向期间，隐藏上方三个游戏按钮
+		_set_top_buttons_visible(false)
+
 		# 临时将按钮显示为“正在布阵...”
 		_sandbox_btn.text = "🛠 正在布阵..."
 		_set_button_color(_sandbox_btn, Color(0.6, 0.4, 0.1))
@@ -481,12 +487,20 @@ func _on_wizard_completed():
 	GameManager.is_sandbox_mode = true
 	print("Sandbox Wizard completed: Sandbox Mode active!")
 	_update_sandbox_button_ui()
+	_set_top_buttons_visible(true)
 
 func _on_wizard_closed():
 	_sandbox_wizard = null
 	GameManager.is_sandbox_mode = false
 	print("Sandbox Wizard aborted/closed: Normal Mode active!")
 	_update_sandbox_button_ui()
+	_set_top_buttons_visible(true)
+	_on_reset_pressed()
+
+func _set_top_buttons_visible(v: bool):
+	if is_instance_valid(_encounter_btn): _encounter_btn.visible = v
+	if is_instance_valid(_reset_btn): _reset_btn.visible = v
+	if is_instance_valid(_undo_btn): _undo_btn.visible = v
 
 func _update_sandbox_button_ui():
 	if GameManager.is_sandbox_mode:

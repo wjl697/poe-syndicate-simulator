@@ -1,0 +1,4 @@
+Script started
+Root name: root
+Root child: @EditorNode@18065 (EditorNode)
+Root child: @ProgressDialog@13 (ProgressDialog)

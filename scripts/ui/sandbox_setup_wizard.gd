@@ -22,8 +22,7 @@ var _pulse_time: float = 0.0              # 呼吸灯时间计数
 # 常量
 const SLOT_GROUPS = [
 	"leader_transport_slot", "leader_fortification_slot", "leader_research_slot", "leader_intervention_slot",
-	"transport_slot", "fortification_slot", "research_slot", "intervention_slot",
-	"unassigned_slot"
+	"transport_slot", "fortification_slot", "research_slot", "intervention_slot"
 ]
 
 # UI 组件
@@ -59,14 +58,8 @@ func _ready():
 	# 允许鼠标穿透根节点，因为我们要点击背后的棋盘卡片
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	
-	# 强制将根 Control 铺满视口
-	set_anchors_preset(Control.PRESET_FULL_RECT)
-	offset_left = 0
-	offset_top = 0
-	offset_right = 0
-	offset_bottom = 0
-	size = get_viewport_rect().size
-	
+	# 取消依赖 CanvasLayer 下的锚点，改用监听视口变化手动控制尺寸
+	get_viewport().size_changed.connect(_on_viewport_size_changed)
 	# 在初始化时，清空所有人的在场状态，从而清除背景中的卡片（主脑卡片除外）
 	for mname in GameManager.MEMBER_DEFS:
 		var m = GameManager.members.get(mname)
@@ -79,10 +72,27 @@ func _ready():
 	
 	_cache_board_slots()
 	_build_ui()
+	_on_viewport_size_changed()
 	_update_step_ui()
 	
 	# 延迟一帧强制修正面板坐标，绕过 Godot 布局引擎在当帧对 Container 的覆盖
 	call_deferred("_fix_step1_panel_rect")
+# ===== 手动响应视口大小变化 =====
+func _on_viewport_size_changed():
+	var vp := get_viewport_rect().size
+	size = vp
+	# 手动强制刷新顶部和底部面板
+	if is_instance_valid(_top_panel):
+		_top_panel.size = Vector2(vp.x, 70)
+		_top_panel.position = Vector2(0, 0)
+	if is_instance_valid(_step2_panel):
+		var panel_w = min(1660.0, vp.x - 40.0)
+		var panel_h = 205.0
+		_step2_panel.size = Vector2(panel_w, panel_h)
+		_step2_panel.position = Vector2((vp.x - panel_w) * 0.5, vp.y - panel_h - 40.0)
+	# 刷新中间步骤1的面板
+	call_deferred("_fix_step1_panel_rect")
+
 
 # ===== 延迟修正步骤1面板坐标（跨过布局引擎运行后）=====
 func _fix_step1_panel_rect():
@@ -247,12 +257,11 @@ func handle_board_card_clicked(mname: String):
 
 # ===== 构建 UI 界面 =====
 func _build_ui():
-	# --- 1. 顶部控制栏 ---
 	_top_panel = PanelContainer.new()
 	_top_panel.custom_minimum_size = Vector2(0, 70)
-	_top_panel.set_anchors_preset(Control.PRESET_TOP_WIDE)
 	_top_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_top_panel)
+	# _top_panel 的尺寸和坐标已交由 _on_viewport_size_changed 手动接管
 	
 	var style_top := StyleBoxFlat.new()
 	style_top.bg_color = Color(0.08, 0.08, 0.12, 0.95)
@@ -390,15 +399,24 @@ func _build_ui():
 	
 	# --- 3. 步骤2：底部卡片坞 ---
 	_step2_panel = PanelContainer.new()
-	_step2_panel.custom_minimum_size = Vector2(0, 160)
-	_step2_panel.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_step2_panel.custom_minimum_size = Vector2(0, 205)
 	_step2_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_step2_panel)
+	# _step2_panel 的尺寸和坐标已交由 _on_viewport_size_changed 手动接管
 	
 	var style_bot := StyleBoxFlat.new()
 	style_bot.bg_color = Color(0.08, 0.08, 0.12, 0.95)
+	style_bot.border_width_left = 2
+	style_bot.border_width_right = 2
 	style_bot.border_width_top = 2
-	style_bot.border_color = Color(0.7, 0.55, 0.2, 0.6)
+	style_bot.border_width_bottom = 2
+	style_bot.border_color = Color(0.7, 0.55, 0.2, 0.8)
+	style_bot.corner_radius_top_left = 12
+	style_bot.corner_radius_top_right = 12
+	style_bot.corner_radius_bottom_left = 12
+	style_bot.corner_radius_bottom_right = 12
+	style_bot.content_margin_left = 16
+	style_bot.content_margin_right = 16
 	style_bot.content_margin_top = 10
 	style_bot.content_margin_bottom = 10
 	_step2_panel.add_theme_stylebox_override("panel", style_bot)
@@ -420,7 +438,8 @@ func _build_ui():
 	
 	_step2_hbox = HBoxContainer.new()
 	_step2_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
-	_step2_hbox.add_theme_constant_override("separation", 15)
+	_step2_hbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_step2_hbox.add_theme_constant_override("separation", 8)
 	scroll2.add_child(_step2_hbox)
 
 	# --- 4. 步骤3：关系提示文字 ---
@@ -520,7 +539,7 @@ func _rebuild_step1_grid():
 		style.content_margin_left = 0
 		style.content_margin_right = 0
 		style.content_margin_top = 0
-		style.content_margin_bottom = 10
+		style.content_margin_bottom = 2
 		
 		if mname in _benched_members:
 			style.bg_color = Color(0.25, 0.08, 0.08, 0.95) # 替补：深红背景
@@ -559,13 +578,18 @@ func _rebuild_step1_grid():
 		lbl.add_theme_color_override("font_color", status_color)
 		vbox.add_child(lbl)
 		
+		# 占位符：仅将文字向上推，而不调整任何卡片和头像的尺寸
+		var bottom_spacer := Control.new()
+		bottom_spacer.custom_minimum_size = Vector2(0, 18)
+		vbox.add_child(bottom_spacer)
+		
 		# 包装为一个不可见的按钮来检测点击
 		var btn := Button.new()
 		btn.flat = true
-		btn.set_anchors_preset(Control.PRESET_FULL_RECT)
 		btn.mouse_filter = Control.MOUSE_FILTER_STOP
 		btn.pressed.connect(func(): _toggle_member_selection(mname))
 		container.add_child(btn)
+		btn.set_anchors_preset(Control.PRESET_FULL_RECT)
 		
 		_step1_grid.add_child(container)
 
@@ -598,7 +622,7 @@ func _rebuild_step2_dock():
 			continue
 			
 		var container := PanelContainer.new()
-		container.custom_minimum_size = Vector2(100, 120)
+		container.custom_minimum_size = Vector2(110, 140)
 		
 		var style := StyleBoxFlat.new()
 		style.corner_radius_top_left = 6
@@ -631,7 +655,7 @@ func _rebuild_step2_dock():
 		# 头像
 		var p_tex = TextureRect.new()
 		p_tex.texture = load(member.portrait_path)
-		p_tex.custom_minimum_size = Vector2(70, 70)
+		p_tex.custom_minimum_size = Vector2(85, 85)
 		p_tex.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 		p_tex.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		p_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE  # 不随原始图片尺寸膨胀

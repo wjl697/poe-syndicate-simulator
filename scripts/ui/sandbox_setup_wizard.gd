@@ -555,38 +555,6 @@ func _create_card_node(mname: String, is_benched: bool) -> PanelContainer:
 	p_tex.position = Vector2.ZERO
 	card_area.add_child(p_tex)
 
-	if is_benched:
-		var badge_tex := preload("res://辛迪加素材/回合数.png")
-		var badge_scale := 1.1 * card_scale
-		var tex_size: Vector2 = badge_tex.get_size()
-		var badge_spr := TextureRect.new()
-		badge_spr.texture = badge_tex
-		badge_spr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		badge_spr.stretch_mode = TextureRect.STRETCH_SCALE
-		badge_spr.size = tex_size * badge_scale
-		var badge_y := 406.08 * card_scale - badge_spr.size.y * 0.5
-		var badge_x := (bg_w - badge_spr.size.x) * 0.5
-		badge_spr.position = Vector2(badge_x, badge_y)
-		badge_spr.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		card_area.add_child(badge_spr)
-
-		var turn_lbl := Label.new()
-		turn_lbl.text = "替  补"
-		turn_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		turn_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-		var sys_font := SystemFont.new()
-		sys_font.font_names = PackedStringArray(["Microsoft YaHei", "sans-serif"])
-		turn_lbl.add_theme_font_override("font", sys_font)
-		turn_lbl.add_theme_font_size_override("font_size", 14)
-		turn_lbl.add_theme_color_override("font_color", Color8(154, 131, 94))
-		turn_lbl.add_theme_color_override("font_outline_color", Color8(154, 131, 94))
-		turn_lbl.add_theme_constant_override("outline_size", 2)
-		turn_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0))
-		turn_lbl.size = Vector2(bg_w, 20)
-		turn_lbl.position = Vector2(0, badge_y + (badge_spr.size.y - 20) * 0.5)
-		turn_lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		card_area.add_child(turn_lbl)
-
 	var lbl := Label.new()
 	lbl.text = mname
 	lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -600,8 +568,6 @@ func _create_card_node(mname: String, is_benched: bool) -> PanelContainer:
 	lbl.scale = Vector2(scale_factor, scale_factor)
 	
 	var lbl_y := bg_h - name_display - 18
-	if is_benched:
-		lbl_y = 337.6 * card_scale - name_display * 0.5
 	lbl.position = Vector2(0, lbl_y)
 	lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card_area.add_child(lbl)

@@ -8,6 +8,11 @@ extends Node2D
 
 var _card_positions: Dictionary = {}   # member_name -> global_position
 
+# 沙盒连线实时预览参数
+var preview_start_member: String = ""
+var preview_target_pos: Vector2 = Vector2.ZERO
+var preview_relation_type: int = -1
+
 var _tex_yellow := preload("res://辛迪加素材/黄色连线.png")
 var _tex_green := preload("res://辛迪加素材/绿色连线.png")
 var _tex_red   := preload("res://辛迪加素材/红色连线.png")
@@ -56,6 +61,19 @@ func _draw() -> void:
 			continue
 		var pair: Dictionary = hierarchy_pairs[pair_key]
 		_draw_pair(pair["a"], pair["b"], _atlas_yellow)
+
+	# 3) 绘制沙盒拖拽连线实时预览（仅在选中第一张卡片时）
+	if preview_start_member != "":
+		var pos_a = _card_positions.get(preview_start_member)
+		if pos_a != null:
+			var local_a = to_local(pos_a)
+			var local_b = preview_target_pos
+			var color := Color.WHITE
+			match preview_relation_type:
+				0: color = Color(0.2, 0.9, 0.3, 0.8) # 绿（信任）
+				1: color = Color(0.9, 0.2, 0.2, 0.8) # 红（仇敌）
+				2: color = Color(0.8, 0.8, 0.8, 0.6) # 灰白（清除）
+			_draw_dashed_line(local_a, local_b, color, 3.0, 10.0, 6.0)
 
 func _collect_hierarchy_pairs() -> Dictionary:
 	var result: Dictionary = {}
@@ -113,3 +131,15 @@ func _make_pair_key(a: String, b: String) -> String:
 	if a <= b:
 		return a + "|" + b
 	return b + "|" + a
+
+func _draw_dashed_line(from: Vector2, to: Vector2, color: Color, width: float = 2.0, dash_length: float = 8.0, gap_length: float = 6.0):
+	var dir := to - from
+	var length := dir.length()
+	if length == 0.0:
+		return
+	var norm := dir.normalized()
+	var current := 0.0
+	while current < length:
+		var end := minf(current + dash_length, length)
+		draw_line(from + norm * current, from + norm * end, color, width)
+		current += dash_length + gap_length

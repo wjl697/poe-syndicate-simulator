@@ -41,6 +41,7 @@ var _relation_hbox: HBoxContainer
 var _btn_trust: Button
 var _btn_rival: Button
 var _btn_clear: Button
+var _btn_clear_all: Button
 
 # 步骤1的中间选择区域
 var _step1_panel: PanelContainer
@@ -59,6 +60,7 @@ var _portrait_cache: Dictionary = {}       # 缓存所有成员的头像纹理�
 var _all_slots: Array[ColorRect] = []
 
 func _ready():
+	add_to_group("sandbox_wizard")
 	# 允许鼠标穿透根节点，因为我们要点击背后的棋盘卡片
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	
@@ -96,7 +98,7 @@ func _on_viewport_size_changed():
 		_top_panel.position = Vector2(0, 0)
 	if is_instance_valid(_step2_panel):
 		var panel_w = min(1660.0, vp.x - 40.0)
-		var panel_h = 205.0
+		var panel_h = 220.0
 		_step2_panel.size = Vector2(panel_w, panel_h)
 		_step2_panel.position = Vector2((vp.x - panel_w) * 0.5, vp.y - panel_h - 40.0)
 	# 刷新中间步骤1的面板
@@ -241,7 +243,7 @@ func handle_board_card_clicked(mname: String):
 			_step3_first_selected_member = mname
 			_relation_tip_label.text = "已选择 " + mname + "，请点击第二张卡片建立关系"
 			# 高亮第一张卡片
-			var card = get_tree().get_first_node_in_group("board") # 实际上是 board 场景
+			var card = _get_board_node()
 			if card and card.has_method("highlight_cards"):
 				card.highlight_cards([mname])
 		else:
@@ -250,7 +252,7 @@ func handle_board_card_clicked(mname: String):
 			_relation_tip_label.text = "点击卡片来绘制关系连线"
 			
 			# 取消高亮
-			var card = get_tree().get_first_node_in_group("board")
+			var card = _get_board_node()
 			if card and card.has_method("clear_highlights"):
 				card.clear_highlights()
 				
@@ -265,7 +267,6 @@ func handle_board_card_clicked(mname: String):
 					GameManager._set_relationship_type(first, mname, GameManager.RelationType.RIVALRY)
 				2: # 清除
 					GameManager._remove_relationship(first, mname)
-			GameManager.board_changed.emit()
 
 # ===== 构建 UI 界面 =====
 func _build_ui():
@@ -329,6 +330,22 @@ func _build_ui():
 	_btn_clear.toggle_mode = true
 	_btn_clear.pressed.connect(func(): _select_relation_mode(2))
 	_relation_hbox.add_child(_btn_clear)
+	
+	var relation_sep := VSeparator.new()
+	relation_sep.add_theme_constant_override("separation", 10)
+	_relation_hbox.add_child(relation_sep)
+	
+	_btn_clear_all = Button.new()
+	_btn_clear_all.text = "❌ 清除所有关系"
+	_btn_clear_all.pressed.connect(func():
+		GameManager.relationships.clear()
+		_step3_first_selected_member = ""
+		_relation_tip_label.text = "点击卡片来绘制关系连线"
+		var board = _get_board_node()
+		if board and board.has_method("clear_highlights"):
+			board.clear_highlights()
+	)
+	_relation_hbox.add_child(_btn_clear_all)
 	
 	var separator3 := VSeparator.new()
 	separator3.add_theme_constant_override("separation", 20)
@@ -405,30 +422,21 @@ func _build_ui():
 	
 	# --- 3. 步骤2：底部卡片坞 ---
 	_step2_panel = PanelContainer.new()
-	_step2_panel.custom_minimum_size = Vector2(0, 205)
+	_step2_panel.custom_minimum_size = Vector2(0, 220)
 	_step2_panel.mouse_filter = Control.MOUSE_FILTER_STOP
 	add_child(_step2_panel)
 	# _step2_panel 的尺寸和坐标已交由 _on_viewport_size_changed 手动接管
 	
-	var style_bot := StyleBoxFlat.new()
-	style_bot.bg_color = Color(0.08, 0.08, 0.12, 0.95)
-	style_bot.border_width_left = 2
-	style_bot.border_width_right = 2
-	style_bot.border_width_top = 2
-	style_bot.border_width_bottom = 2
-	style_bot.border_color = Color(0.7, 0.55, 0.2, 0.8)
-	style_bot.corner_radius_top_left = 12
-	style_bot.corner_radius_top_right = 12
-	style_bot.corner_radius_bottom_left = 12
-	style_bot.corner_radius_bottom_right = 12
+	var style_bot := StyleBoxEmpty.new()
 	style_bot.content_margin_left = 16
 	style_bot.content_margin_right = 16
-	style_bot.content_margin_top = 10
-	style_bot.content_margin_bottom = 10
+	style_bot.content_margin_top = 0
+	style_bot.content_margin_bottom = 0
 	_step2_panel.add_theme_stylebox_override("panel", style_bot)
 	
 	var step2_vbox := VBoxContainer.new()
 	step2_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	step2_vbox.add_theme_constant_override("separation", 14)
 	_step2_panel.add_child(step2_vbox)
 	
 	var placement_tip := Label.new()
@@ -698,85 +706,88 @@ func _rebuild_step2_dock():
 	for child in _step2_hbox.get_children():
 		child.queue_free()
 		
+	var card_scale := 0.9 * 0.42
+	var bg_w := 408.0 * card_scale
+	var bg_h := 422.0 * card_scale
+
 	for mname in _selected_members:
 		var member = GameManager.members.get(mname)
 		if member == null:
 			continue
 			
 		var container := PanelContainer.new()
-		container.custom_minimum_size = Vector2(110, 140)
+		container.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 		
-		var style := StyleBoxFlat.new()
-		style.corner_radius_top_left = 6
-		style.corner_radius_top_right = 6
-		style.corner_radius_bottom_left = 6
-		style.corner_radius_bottom_right = 6
-		style.border_width_left = 2
-		style.border_width_right = 2
-		style.border_width_top = 2
-		style.border_width_bottom = 2
-		
-		if member.is_on_board:
-			# 已放置：半透明且加上勾选框
-			style.bg_color = Color(0.1, 0.1, 0.15, 0.4)
-			style.border_color = Color(0.2, 0.6, 0.8, 0.3)
-		else:
-			if mname == _active_placement_member:
-				style.bg_color = Color(0.2, 0.25, 0.4, 0.95) # 选中待放置
-				style.border_color = Color(0.4, 0.6, 1.0, 1.0)
-			else:
-				style.bg_color = Color(0.15, 0.15, 0.2, 0.9)
-				style.border_color = Color(0.5, 0.5, 0.5, 0.6)
-				
-		container.add_theme_stylebox_override("panel", style)
-		
-		var vbox := VBoxContainer.new()
-		vbox.alignment = BoxContainer.ALIGNMENT_CENTER
-		container.add_child(vbox)
-		
-		# 头像
-		var p_tex = TextureRect.new()
-		p_tex.texture = load(member.portrait_path)
-		p_tex.custom_minimum_size = Vector2(85, 85)
-		p_tex.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-		p_tex.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		p_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE  # 不随原始图片尺寸膨胀
+		var card_area := Control.new()
+		card_area.custom_minimum_size = Vector2(bg_w, bg_h)
+		card_area.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		container.add_child(card_area)
+
+		# 1. 纸张背景
+		var bg_tex := TextureRect.new()
+		bg_tex.texture = preload("res://辛迪加素材/人物背景.png")
+		bg_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		bg_tex.stretch_mode = TextureRect.STRETCH_SCALE
+		bg_tex.size = Vector2(bg_w, bg_h)
+		bg_tex.position = Vector2.ZERO
+		card_area.add_child(bg_tex)
+
+		# 2. 角色头像
+		var p_tex := TextureRect.new()
+		p_tex.texture = _portrait_cache.get(mname)
+		p_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		p_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		vbox.add_child(p_tex)
-		
-		# 名字
+		p_tex.size = Vector2(bg_w, bg_h)
+		p_tex.position = Vector2.ZERO
+		card_area.add_child(p_tex)
+
+		# 3. 名字文本
 		var lbl := Label.new()
 		lbl.text = mname
 		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lbl.add_theme_font_size_override("font_size", 12)
-		vbox.add_child(lbl)
-		
-		# 放置说明
-		var state_lbl := Label.new()
-		state_lbl.add_theme_font_size_override("font_size", 10)
-		state_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		
+		lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		var name_display := roundi(48.0 * card_scale)
+		var scale_factor := name_display / 48.0
+		lbl.add_theme_font_size_override("font_size", 48)
+		lbl.add_theme_color_override("font_color", Color(0, 0, 0))
+		lbl.remove_theme_color_override("font_shadow_color")
+		lbl.size = Vector2(ceil(bg_w / scale_factor), 48)
+		lbl.scale = Vector2(scale_factor, scale_factor)
+		var lbl_y := bg_h - name_display - 18
+		lbl.position = Vector2(0, lbl_y)
+		lbl.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		card_area.add_child(lbl)
+
+		# 4. 如果是选中状态，在外部加一层发光蓝框
+		if mname == _active_placement_member:
+			var highlight := Panel.new()
+			var style_hl := StyleBoxFlat.new()
+			style_hl.draw_center = false
+			style_hl.border_width_left = 3
+			style_hl.border_width_top = 3
+			style_hl.border_width_right = 3
+			style_hl.border_width_bottom = 3
+			style_hl.border_color = Color(0.15, 0.55, 0.95, 1.0)
+			style_hl.shadow_color = Color(0.15, 0.55, 0.95, 0.5)
+			style_hl.shadow_size = 5
+			highlight.add_theme_stylebox_override("panel", style_hl)
+			highlight.size = Vector2(bg_w, bg_h)
+			highlight.position = Vector2.ZERO
+			highlight.mouse_filter = Control.MOUSE_FILTER_IGNORE
+			card_area.add_child(highlight)
+
+		# 5. 如果已经上阵摆放，在底部坞做半透明置灰
 		if member.is_on_board:
-			if member.division == GameManager.Division.NONE:
-				state_lbl.text = "🟢 自由人"
-				state_lbl.add_theme_color_override("font_color", Color(0.6, 0.8, 0.6))
-			else:
-				var div_name = GameManager.DIVISION_NAMES.get(member.division, "")
-				var role_name = "首领" if member.is_leader else "部下"
-				state_lbl.text = "🟢 " + div_name + role_name
-				state_lbl.add_theme_color_override("font_color", Color(0.4, 0.8, 1.0))
+			container.modulate.a = 0.25
 		else:
-			state_lbl.text = "❌ 未摆放"
-			state_lbl.add_theme_color_override("font_color", Color(0.9, 0.4, 0.4))
-		vbox.add_child(state_lbl)
-		
-		# 交互按钮
+			container.modulate.a = 1.0
+
+		# 6. 点击事件交互按钮
 		var btn := Button.new()
 		btn.flat = true
 		btn.set_anchors_preset(Control.PRESET_FULL_RECT)
 		btn.mouse_filter = Control.MOUSE_FILTER_STOP
 		
-		# 如果已摆放，点击则可以召回；如果未摆放，点击则选中准备摆放
 		btn.pressed.connect(func():
 			if member.is_on_board:
 				# 召回该成员
@@ -787,7 +798,11 @@ func _rebuild_step2_dock():
 				_active_placement_member = ""
 				GameManager.board_changed.emit()
 			else:
-				_active_placement_member = mname
+				if _active_placement_member == mname:
+					# 再次点击取消选中
+					_active_placement_member = ""
+				else:
+					_active_placement_member = mname
 			_update_step_ui()
 		)
 		container.add_child(btn)
@@ -798,6 +813,19 @@ func _rebuild_step2_dock():
 func _on_back_pressed():
 	if _current_step > 1:
 		_current_step -= 1
+		
+		# 如果返回到了步骤1，清空所有已放置的卡片状态并同步棋盘，防止卡片遗留在背景中
+		if _current_step == 1:
+			for mname in GameManager.MEMBER_DEFS:
+				var m = GameManager.members.get(mname)
+				if m:
+					m.is_on_board = false
+					m.division = GameManager.Division.NONE
+					m.is_leader = false
+					m.rank = 0
+			_active_placement_member = ""
+			GameManager.board_changed.emit()
+			
 		_update_step_ui()
 
 func _on_next_pressed():
@@ -855,3 +883,25 @@ func _on_close_pressed():
 	
 	closed.emit()
 	queue_free()
+
+# ===== 获取某个成员在步骤2底部坞中的全局屏幕坐标 =====
+func get_member_dock_screen_position(mname: String) -> Vector2:
+	if _current_step != 2 or not is_instance_valid(_step2_hbox):
+		return Vector2.ZERO
+		
+	var idx = _selected_members.find(mname)
+	if idx != -1 and idx < _step2_hbox.get_child_count():
+		var child = _step2_hbox.get_child(idx) as Control
+		if is_instance_valid(child):
+			# 获取该卡牌中心的全局屏幕坐标
+			var size_half = child.size * 0.5
+			return child.global_position + size_half
+			
+	return Vector2.ZERO
+
+func _get_board_node() -> SyndicateBoard:
+	var nodes = get_tree().get_nodes_in_group("board")
+	for node in nodes:
+		if is_instance_valid(node) and not node.is_queued_for_deletion():
+			return node as SyndicateBoard
+	return null

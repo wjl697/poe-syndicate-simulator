@@ -82,6 +82,7 @@ var _tex_bg := preload("res://辛迪加素材/人物背景.png")
 var _tex_mastermind_halo := preload("res://辛迪加素材/主脑光晕.png")
 
 func _ready():
+	add_to_group("board")
 	# 将所有依赖全局坐标系初始化的调用包裹在一个延迟函数中，避免顺序错乱
 	call_deferred("_late_init")
 	
@@ -495,6 +496,22 @@ func _update_relationship_lines():
 		if ms == null or not ms.is_on_board:
 			continue
 		positions[mname] = card.global_position
+		
+	# --- 注入沙盒向导的连线实时预览参数 ---
+	var wizards = get_tree().get_nodes_in_group("sandbox_wizard")
+	var active_wizard: SandboxSetupWizard = null
+	for w in wizards:
+		if is_instance_valid(w) and not w.is_queued_for_deletion():
+			active_wizard = w as SandboxSetupWizard
+			break
+			
+	if active_wizard and active_wizard._current_step == 3 and active_wizard._step3_first_selected_member != "":
+		_rel_lines.preview_start_member = active_wizard._step3_first_selected_member
+		_rel_lines.preview_relation_type = active_wizard._step3_relation_mode
+		_rel_lines.preview_target_pos = to_local(get_global_mouse_position())
+	else:
+		_rel_lines.preview_start_member = ""
+		
 	_rel_lines.update_positions(positions)
 
 
@@ -522,7 +539,18 @@ func _on_board_changed():
 			card.card_clicked.connect(_on_card_click)
 			card.card_hovered.connect(_on_card_hover.bind(mname))
 			card.card_unhovered.connect(_on_card_unhover)
-			card.position = FREE_CENTER
+			# 初始坐标处理：如果有沙盒向导且处于第二步骤，则把起点设为底部坞中卡片的屏幕位置
+			var start_pos := FREE_CENTER
+			var wizards = get_tree().get_nodes_in_group("sandbox_wizard")
+			if wizards.size() > 0:
+				var wizard = wizards[0]
+				if is_instance_valid(wizard) and wizard.has_method("get_member_dock_screen_position"):
+					var screen_pos = wizard.get_member_dock_screen_position(mname)
+					if screen_pos != Vector2.ZERO:
+						# 将屏幕坐标反算回 board.gd 节点空间下的本地坐标，实现完美的飞入动画！
+						var global_pos = get_viewport().get_canvas_transform().affine_inverse() * screen_pos
+						start_pos = to_local(global_pos)
+			card.position = start_pos
 			add_child(card)
 			_cards[mname] = card
 

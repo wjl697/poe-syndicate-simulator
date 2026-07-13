@@ -417,10 +417,8 @@ func set_highlighted(on: bool) -> void:
 		_highlight_tween.kill()
 		_highlight_tween = null
 	
-	# 光晕图层（halo_sprite）是卡牌常驻的纸张背景阴影/底板，必须保持可见
 	halo_sprite.visible = true
 	if on:
-		# 保持卡牌自身色调正常（Color.WHITE），只让背景的阴影底板（光晕）闪烁
 		modulate = Color.WHITE
 		halo_sprite.modulate.a = 1.0
 		_highlight_tween = create_tween().set_loops()

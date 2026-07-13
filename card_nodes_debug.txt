@@ -1,0 +1,5 @@
+bg_sprite position: (0.0, 0.0), scale: (1.0, 1.0)
+portrait_sprite position: (0.0, -16.88), scale: (0.904656, 0.904656)
+name_label position: (-163.2, 84.4), size: (326.4, 59.99999)
+prison_turn_badge position: (0.0, 195.0), scale: (1.1, 1.1)
+prison_turn_label position: (-175.0, 194.0), size: (350.0, 23.0)

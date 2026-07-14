@@ -21,6 +21,10 @@ var _step3_relation_mode: int = -1 # -1=无, 0=信任(绿), 1=仇敌(红), 2=清
 var _step3_first_selected_member: String = ""
 var _pulse_time: float = 0.0              # 呼吸灯时间计数
 
+# 预设数据状态
+var _presets_dict: Dictionary = {}
+var _active_preset_name: String = ""
+
 # 常量
 const SLOT_GROUPS = [
 	"leader_transport_slot", "leader_fortification_slot", "leader_research_slot", "leader_intervention_slot",
@@ -55,6 +59,12 @@ var _step2_hbox: HBoxContainer
 # 连线提示 label
 var _relation_tip_label: Label
 
+# 预设与控制按钮组件
+var _preset_selector: OptionButton
+var _btn_manage_presets: Button
+var _btn_auto_fill: Button
+var _btn_recall_all: Button
+
 # 缓存所有插槽引用
 var _portrait_cache: Dictionary = {}       # 缓存所有成员的头像纹理，避免动画播放中发生磁盘 I/O
 var _all_slots: Array[ColorRect] = []
@@ -63,6 +73,8 @@ func _ready():
 	add_to_group("sandbox_wizard")
 	# 允许鼠标穿透根节点，因为我们要点击背后的棋盘卡片
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	
+	_init_presets_system()
 	
 	# 预加载所有成员头像纹理到内存中，避免在动画播放时产生磁盘 I/O 导致的首次卡顿
 	for mname in GameManager.MEMBER_DEFS:
@@ -307,6 +319,15 @@ func _build_ui():
 	separator2.add_theme_constant_override("separation", 30)
 	top_hbox.add_child(separator2)
 	
+	_btn_manage_presets = Button.new()
+	_btn_manage_presets.text = "📂 预设管理"
+	_btn_manage_presets.pressed.connect(_show_presets_management_popup)
+	top_hbox.add_child(_btn_manage_presets)
+	
+	var separator_pre := VSeparator.new()
+	separator_pre.add_theme_constant_override("separation", 20)
+	top_hbox.add_child(separator_pre)
+	
 	# 关系定义控制栏 (仅在步骤3可见)
 	_relation_hbox = HBoxContainer.new()
 	_relation_hbox.visible = false
@@ -372,6 +393,16 @@ func _build_ui():
 	_reset_btn.text = "清空重置"
 	_reset_btn.pressed.connect(_on_reset_pressed)
 	btn_hbox.add_child(_reset_btn)
+	
+	_btn_auto_fill = Button.new()
+	_btn_auto_fill.text = "🤖 自动排兵"
+	_btn_auto_fill.pressed.connect(_on_auto_fill_pressed)
+	btn_hbox.add_child(_btn_auto_fill)
+	
+	_btn_recall_all = Button.new()
+	_btn_recall_all.text = "❌ 全部收回"
+	_btn_recall_all.pressed.connect(_on_recall_all_pressed)
+	btn_hbox.add_child(_btn_recall_all)
 	
 	_close_btn = Button.new()
 	_close_btn.text = "退出沙盒"
@@ -502,8 +533,12 @@ func _update_step_ui():
 			_next_btn.disabled = (_benched_members.size() != 3)
 			_reset_btn.visible = true
 			
+			if is_instance_valid(_btn_auto_fill): _btn_auto_fill.visible = false
+			if is_instance_valid(_btn_recall_all): _btn_recall_all.visible = false
+			
 			_connect_slot_inputs(false)
 			_rebuild_step1_grid()
+			_sync_benched_card_nodes()
 		2:
 			_step_label.text = "步骤 2 / 3: 摆放卡片位置 (" + str(_get_placed_count()) + " / 14)"
 			_step1_panel.visible = false
@@ -516,6 +551,9 @@ func _update_step_ui():
 			_next_btn.text = "下一步"
 			_next_btn.disabled = (_get_placed_count() != 14)
 			_reset_btn.visible = true
+			
+			if is_instance_valid(_btn_auto_fill): _btn_auto_fill.visible = true
+			if is_instance_valid(_btn_recall_all): _btn_recall_all.visible = true
 			
 			_connect_slot_inputs(true)
 			_rebuild_step2_dock()
@@ -531,6 +569,9 @@ func _update_step_ui():
 			_next_btn.text = "完成布阵"
 			_next_btn.disabled = false
 			_reset_btn.visible = false
+			
+			if is_instance_valid(_btn_auto_fill): _btn_auto_fill.visible = false
+			if is_instance_valid(_btn_recall_all): _btn_recall_all.visible = false
 			
 			_connect_slot_inputs(false)
 			if _step3_relation_mode == -1:
@@ -874,6 +915,24 @@ func _on_reset_pressed():
 		GameManager.board_changed.emit()
 		_update_step_ui()
 
+func _on_auto_fill_pressed():
+	var preset = _presets_dict["presets"].get(_active_preset_name, {})
+	_auto_fill_placements(preset)
+	GameManager.board_changed.emit()
+	_rebuild_step2_dock()
+
+func _on_recall_all_pressed():
+	for mname in GameManager.MEMBER_DEFS:
+		var m = GameManager.members.get(mname)
+		if m:
+			m.is_on_board = false
+			m.division = GameManager.Division.NONE
+			m.is_leader = false
+			m.rank = 0
+	_active_placement_member = ""
+	GameManager.board_changed.emit()
+	_rebuild_step2_dock()
+
 func _on_close_pressed():
 	_connect_slot_inputs(false)
 	
@@ -905,3 +964,622 @@ func _get_board_node() -> SyndicateBoard:
 		if is_instance_valid(node) and not node.is_queued_for_deletion():
 			return node as SyndicateBoard
 	return null
+
+# ===== 预设配置系统核心方法 =====
+const PRESETS_FILE_PATH = "user://sandbox_presets.json"
+
+func _init_presets_system():
+	# 1. 尝试读取本地预设文件
+	if FileAccess.file_exists(PRESETS_FILE_PATH):
+		var file = FileAccess.open(PRESETS_FILE_PATH, FileAccess.READ)
+		var text = file.get_as_text()
+		var json = JSON.new()
+		if json.parse(text) == OK:
+			if json.data is Dictionary:
+				_presets_dict = json.data
+	
+	# 2. 如果文件不存在或解析失败，初始化出厂默认模板
+	if _presets_dict.is_empty() or not _presets_dict.has("presets"):
+		_presets_dict = {
+			"active_preset": "2-5-5-2 经典特定布局",
+			"presets": {
+				"2-5-5-2 经典特定布局": {
+					"benched": [],
+					"divisions": {
+						"transport": {
+							"leader": "格拉维奇",
+							"subordinates": ["瓦里西"]
+						},
+						"intervention": {
+							"leader": "哈库",
+							"subordinates": ["里奥"]
+						},
+						"fortification": {
+							"leader": "",
+							"subordinates": []
+						},
+						"research": {
+							"leader": "",
+							"subordinates": []
+						}
+					},
+					"relationships": []
+				}
+			}
+		}
+		_save_presets_to_file()
+		
+	# 3. 取得当前活跃的预设名称
+	_active_preset_name = _presets_dict.get("active_preset", "")
+	var keys = _presets_dict["presets"].keys()
+	if _active_preset_name == "" or not _presets_dict["presets"].has(_active_preset_name):
+		if not keys.is_empty():
+			_active_preset_name = keys[0]
+		else:
+			_active_preset_name = ""
+		_presets_dict["active_preset"] = _active_preset_name
+
+func _save_presets_to_file():
+	var file = FileAccess.open(PRESETS_FILE_PATH, FileAccess.WRITE)
+	if file:
+		_presets_dict["active_preset"] = _active_preset_name
+		file.store_string(JSON.stringify(_presets_dict, "\t"))
+
+func _refresh_preset_selector():
+	if not is_instance_valid(_preset_selector):
+		return
+	_preset_selector.clear()
+	var keys = _presets_dict["presets"].keys()
+	if keys.is_empty():
+		_preset_selector.add_item("无预设")
+		_preset_selector.select(0)
+		return
+		
+	for i in range(keys.size()):
+		_preset_selector.add_item(keys[i])
+		if keys[i] == _active_preset_name:
+			_preset_selector.select(i)
+
+func _on_preset_selected(idx: int):
+	var keys = _presets_dict["presets"].keys()
+	if keys.is_empty():
+		return
+	var key = _preset_selector.get_item_text(idx)
+	_active_preset_name = key
+	_presets_dict["active_preset"] = key
+	_save_presets_to_file()
+	if _current_step > 1:
+		_load_preset(_active_preset_name)
+
+func _on_save_preset_pressed():
+	if _active_preset_name != "":
+		_save_current_layout_to_preset(_active_preset_name)
+
+func _show_presets_management_popup():
+	# 1. 创建黑色半透明背景遮罩
+	var backdrop := Control.new()
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(backdrop)
+	
+	var color_rect := ColorRect.new()
+	color_rect.color = Color(0, 0, 0, 0.4)
+	color_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.add_child(color_rect)
+	
+	# 2. 居中的 PanelContainer 控制面板
+	var panel := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.08, 0.12, 0.98)
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(0.7, 0.55, 0.2, 0.8) # 金色边框
+	style.shadow_color = Color(0, 0, 0, 0.6)
+	style.shadow_size = 15
+	style.content_margin_left = 20
+	style.content_margin_right = 20
+	style.content_margin_top = 15
+	style.content_margin_bottom = 15
+	panel.add_theme_stylebox_override("panel", style)
+	
+	var panel_size := Vector2(460, 290) if _current_step == 1 else Vector2(460, 230)
+	panel.size = panel_size
+	var vp := get_viewport_rect().size
+	panel.position = Vector2((vp.x - panel_size.x) * 0.5, (vp.y - panel_size.y) * 0.5)
+	backdrop.add_child(panel)
+	
+	# 3. 内部纵向布局
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 18)
+	panel.add_child(vbox)
+	
+	# --- 头部 ---
+	var header_hbox := HBoxContainer.new()
+	vbox.add_child(header_hbox)
+	
+	var title_lbl := Label.new()
+	title_lbl.text = "📂 预设方案管理"
+	title_lbl.add_theme_font_size_override("font_size", 16)
+	title_lbl.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+	header_hbox.add_child(title_lbl)
+	
+	var spacer := Control.new()
+	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header_hbox.add_child(spacer)
+	
+	var close_btn := Button.new()
+	close_btn.text = " 关闭 "
+	close_btn.pressed.connect(func(): backdrop.queue_free())
+	header_hbox.add_child(close_btn)
+	
+	# 分割线
+	var hsep := HSeparator.new()
+	vbox.add_child(hsep)
+	
+	# --- 下拉框切换区 ---
+	var select_hbox := HBoxContainer.new()
+	select_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	select_hbox.add_theme_constant_override("separation", 10)
+	vbox.add_child(select_hbox)
+	
+	var select_lbl := Label.new()
+	select_lbl.text = "当前选定预设："
+	select_lbl.add_theme_font_size_override("font_size", 14)
+	select_hbox.add_child(select_lbl)
+	
+	_preset_selector = OptionButton.new()
+	_preset_selector.custom_minimum_size = Vector2(240, 0)
+	select_hbox.add_child(_preset_selector)
+	
+	_refresh_preset_selector()
+	
+	# --- 操作按钮区 ---
+	var btn_hbox := HBoxContainer.new()
+	btn_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	btn_hbox.add_theme_constant_override("separation", 15)
+	vbox.add_child(btn_hbox)
+	
+	var save_btn := Button.new()
+	save_btn.text = "💾 保存当前"
+	btn_hbox.add_child(save_btn)
+	
+	var new_btn := Button.new()
+	new_btn.text = "➕ 另存为"
+	btn_hbox.add_child(new_btn)
+	
+	var delete_btn := Button.new()
+	delete_btn.text = "🗑 删除方案"
+	btn_hbox.add_child(delete_btn)
+	
+	var quick_btn: Button = null
+	if _current_step == 1:
+		var quick_hbox := HBoxContainer.new()
+		quick_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+		vbox.add_child(quick_hbox)
+		
+		quick_btn = Button.new()
+		quick_btn.text = "⚡ 快捷布阵 (直达连线)"
+		quick_btn.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+		quick_btn.pressed.connect(func():
+			_load_preset(_active_preset_name)
+			_current_step = 3
+			_update_step_ui()
+			backdrop.queue_free()
+		)
+		quick_hbox.add_child(quick_btn)
+		
+	# 定义用于更新按钮禁用状态的闭包
+	var update_popup_buttons = func():
+		var keys = _presets_dict["presets"].keys()
+		var has_presets = not keys.is_empty()
+		
+		_preset_selector.disabled = not has_presets
+		save_btn.disabled = not has_presets
+		delete_btn.disabled = not has_presets
+		if is_instance_valid(quick_btn):
+			quick_btn.disabled = not has_presets
+			
+	# 执行一次状态更新
+	update_popup_buttons.call()
+	
+	# 绑定事件
+	_preset_selector.item_selected.connect(func(idx: int):
+		_on_preset_selected(idx)
+		update_popup_buttons.call()
+	)
+	
+	save_btn.pressed.connect(func():
+		_on_save_preset_pressed()
+		var tip := Label.new()
+		tip.text = "✓ 已成功覆盖保存当前预设！"
+		tip.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		tip.add_theme_color_override("font_color", Color(0.2, 0.9, 0.3))
+		vbox.add_child(tip)
+		await get_tree().create_timer(1.2).timeout
+		if is_instance_valid(tip): tip.queue_free()
+	)
+	
+	new_btn.pressed.connect(func():
+		_show_new_preset_naming_popup(backdrop, update_popup_buttons)
+	)
+	
+	delete_btn.pressed.connect(func():
+		if _presets_dict["presets"].has(_active_preset_name):
+			_presets_dict["presets"].erase(_active_preset_name)
+			
+			var keys = _presets_dict["presets"].keys()
+			if keys.is_empty():
+				_active_preset_name = ""
+				_presets_dict["active_preset"] = ""
+				# 彻底清空棋盘状态
+				for mname in GameManager.MEMBER_DEFS:
+					var m = GameManager.members.get(mname)
+					if m:
+						m.is_on_board = false
+						m.division = GameManager.Division.NONE
+						m.is_leader = false
+						m.rank = 0
+				GameManager.relationships.clear()
+				GameManager.board_changed.emit()
+				_rebuild_step1_grid()
+				_layout_benched_cards()
+				_rebuild_step2_dock()
+			else:
+				_active_preset_name = keys[0]
+				_presets_dict["active_preset"] = _active_preset_name
+				_load_preset(_active_preset_name)
+				
+			_save_presets_to_file()
+			_refresh_preset_selector()
+			update_popup_buttons.call()
+	)
+
+func _show_new_preset_naming_popup(parent_node: Node, on_confirmed_callback: Callable):
+	var sub_backdrop := Control.new()
+	sub_backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	sub_backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	parent_node.add_child(sub_backdrop)
+	
+	var color_rect := ColorRect.new()
+	color_rect.color = Color(0, 0, 0, 0.35)
+	color_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	sub_backdrop.add_child(color_rect)
+	
+	var panel := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.12, 0.12, 0.16, 0.99)
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(0.7, 0.55, 0.2, 0.8)
+	style.shadow_color = Color(0, 0, 0, 0.8)
+	style.shadow_size = 10
+	style.content_margin_left = 20
+	style.content_margin_right = 20
+	style.content_margin_top = 15
+	style.content_margin_bottom = 15
+	panel.add_theme_stylebox_override("panel", style)
+	
+	var panel_size := Vector2(380, 180)
+	panel.size = panel_size
+	var vp := get_viewport_rect().size
+	panel.position = Vector2((vp.x - panel_size.x) * 0.5, (vp.y - panel_size.y) * 0.5)
+	sub_backdrop.add_child(panel)
+	
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 15)
+	panel.add_child(vbox)
+	
+	var lbl := Label.new()
+	lbl.text = "请输入新预设的名称："
+	lbl.add_theme_font_size_override("font_size", 14)
+	vbox.add_child(lbl)
+	
+	var line_edit := LineEdit.new()
+	var default_name = "自定义布局 " + str(_presets_dict["presets"].size() + 1)
+	line_edit.placeholder_text = default_name
+	line_edit.text = default_name
+	line_edit.custom_minimum_size = Vector2(250, 0)
+	vbox.add_child(line_edit)
+	
+	var save_preset_func = func():
+		var name_text = line_edit.text.strip_edges()
+		if name_text == "":
+			name_text = default_name
+		_save_current_layout_to_preset(name_text)
+		_active_preset_name = name_text
+		_save_presets_to_file()
+		_refresh_preset_selector()
+		if on_confirmed_callback.is_valid():
+			on_confirmed_callback.call()
+		sub_backdrop.queue_free()
+		
+	line_edit.text_submitted.connect(func(_new_text):
+		save_preset_func.call()
+	)
+	
+	var btn_hbox := HBoxContainer.new()
+	btn_hbox.alignment = BoxContainer.ALIGNMENT_END
+	btn_hbox.add_theme_constant_override("separation", 12)
+	vbox.add_child(btn_hbox)
+	
+	var cancel_btn := Button.new()
+	cancel_btn.text = " 取消 "
+	cancel_btn.pressed.connect(func(): sub_backdrop.queue_free())
+	btn_hbox.add_child(cancel_btn)
+	
+	var ok_btn := Button.new()
+	ok_btn.text = " 确定 "
+	ok_btn.pressed.connect(func():
+		save_preset_func.call()
+	)
+	btn_hbox.add_child(ok_btn)
+	
+	line_edit.grab_focus()
+
+func _save_current_layout_to_preset(preset_name: String):
+	# 收集当前摆场数据
+	var benched_list = []
+	for mname in _benched_members:
+		benched_list.append(mname)
+		
+	var div_data = {
+		"transport": { "leader": "", "subordinates": [] },
+		"fortification": { "leader": "", "subordinates": [] },
+		"research": { "leader": "", "subordinates": [] },
+		"intervention": { "leader": "", "subordinates": [] }
+	}
+	
+	for div_name in div_data.keys():
+		var div_enum = GameManager.Division.NONE
+		match div_name:
+			"transport": div_enum = GameManager.Division.TRANSPORT
+			"fortification": div_enum = GameManager.Division.FORTIFICATION
+			"research": div_enum = GameManager.Division.RESEARCH
+			"intervention": div_enum = GameManager.Division.INTERVENTION
+			
+		var leader = GameManager.get_division_leader(div_enum)
+		if leader and leader.is_on_board:
+			div_data[div_name]["leader"] = leader.member_name
+			
+		var subs = GameManager.get_division_members(div_enum)
+		for sub in subs:
+			if sub.is_on_board:
+				div_data[div_name]["subordinates"].append(sub.member_name)
+				
+	var rel_list = []
+	for rel in GameManager.relationships:
+		rel_list.append({
+			"a": rel.member_a,
+			"b": rel.member_b,
+			"type": rel.type
+		})
+		
+	_presets_dict["presets"][preset_name] = {
+		"benched": benched_list,
+		"divisions": div_data,
+		"relationships": rel_list
+	}
+	
+	_save_presets_to_file()
+	print("【预设】成功将当前布局保存至预设：" + preset_name)
+
+func _load_preset(preset_name: String):
+	if not _presets_dict["presets"].has(preset_name):
+		return
+	var preset = _presets_dict["presets"][preset_name]
+	
+	# 重置所有成员的状态（包括死刑/监禁/情报/历史记录）避免从正常模式继承脏数据
+	for mname in GameManager.MEMBER_DEFS:
+		var m = GameManager.members.get(mname)
+		if m:
+			m.is_imprisoned = false
+			m.equipment_count = 0
+			m.cached_betray_effect = -1
+			m.cached_bargain_effect = -1
+			m.cached_bargain_target = ""
+			
+	GameManager.turn_count = 0
+	GameManager.mastermind_intel = 0.0
+	GameManager.current_encounter.clear()
+	GameManager.encounter_queue.clear()
+	GameManager.prison_queue.clear()
+	GameManager.history_stack.clear()
+	for div in GameManager.ALL_DIVISIONS:
+		GameManager.intelligence[div] = 0.0
+		GameManager.intelligence_changed.emit(div, 0.0)
+	
+	# 1. 还原替补席人员名单
+	_benched_members.clear()
+	var benched_preset = preset.get("benched", [])
+	if benched_preset.size() == 3:
+		for mname in benched_preset:
+			_benched_members.append(mname)
+	else:
+		var reserved = []
+		var div_data = preset.get("divisions", {})
+		for div_key in div_data.keys():
+			var p = div_data[div_key]
+			var l = p.get("leader", "")
+			if l != "": reserved.append(l)
+			for s in p.get("subordinates", []):
+				if s != "": reserved.append(s)
+		
+		# 运输部/调停部默认核心特定人物保护
+		for core in ["格拉维奇", "瓦里西", "哈库", "里奥"]:
+			if core not in reserved:
+				reserved.append(core)
+				
+		var candidates = []
+		for mname in GameManager.MEMBER_DEFS:
+			if mname not in reserved:
+				candidates.append(mname)
+		candidates.shuffle()
+		
+		for i in range(min(3, candidates.size())):
+			_benched_members.append(candidates[i])
+			
+	# 2. 根据替补名单计算出上场的14名成员
+	_selected_members.clear()
+	for mname in GameManager.MEMBER_DEFS:
+		if mname not in _benched_members:
+			_selected_members.append(mname)
+			
+	# 3. 初始化并自动分配卡牌槽位
+	_auto_fill_placements(preset)
+	
+	# 4. 加载关系线连线
+	GameManager.relationships.clear()
+	for rel_data in preset.get("relationships", []):
+		var a = rel_data.get("a", "")
+		var b = rel_data.get("b", "")
+		var type = int(rel_data.get("type", 0))
+		GameManager._set_relationship_type(a, b, type)
+		
+	# 5. 更新游戏数据为沙盒模式
+	GameManager.is_sandbox_mode = true
+	GameManager.bench_pool.clear()
+	for mname in _benched_members:
+		GameManager.bench_pool.append(mname)
+		
+	# 6. 同步更新场景并重新渲染
+	GameManager.board_changed.emit()
+	
+	# 重建UI状态
+	_rebuild_step1_grid()
+	_layout_benched_cards()
+	_rebuild_step2_dock()
+
+func _auto_fill_placements(preset: Dictionary):
+	# 重置所有成员的在场及卡位状态
+	for mname in GameManager.MEMBER_DEFS:
+		var m = GameManager.members.get(mname)
+		if m:
+			m.is_on_board = false
+			m.division = GameManager.Division.NONE
+			m.is_leader = false
+			m.rank = 0
+			
+	# 设置上阵状态
+	for mname in _selected_members:
+		var m = GameManager.members.get(mname)
+		if m:
+			m.is_on_board = true
+			m.is_revealed = true
+			
+	# 1. 优先按预设加载特定槽位 (如果预设成员存在于上阵名单中)
+	var div_data = preset.get("divisions", {})
+	var placed_members = []
+	
+	for div_name in div_data.keys():
+		var div_enum = GameManager.Division.NONE
+		match div_name:
+			"transport": div_enum = GameManager.Division.TRANSPORT
+			"fortification": div_enum = GameManager.Division.FORTIFICATION
+			"research": div_enum = GameManager.Division.RESEARCH
+			"intervention": div_enum = GameManager.Division.INTERVENTION
+			
+		var p = div_data[div_name]
+		
+		# 摆放首领
+		var l = p.get("leader", "")
+		if l != "" and l in _selected_members:
+			var m = GameManager.members.get(l)
+			m.division = div_enum
+			m.is_leader = true
+			m.rank = 1
+			placed_members.append(l)
+			
+		# 摆放手下
+		for s in p.get("subordinates", []):
+			if s != "" and s in _selected_members and s not in placed_members:
+				var m = GameManager.members.get(s)
+				m.division = div_enum
+				m.is_leader = false
+				m.rank = 1
+				placed_members.append(s)
+				
+	# 2. 搜集尚未被分配具体位置的上阵成员池
+	var pool = []
+	for mname in _selected_members:
+		if mname not in placed_members:
+			pool.append(mname)
+	pool.shuffle()
+	
+	# 3. 补位空缺的插槽，严格满足 2-5-5-2 人数限制
+	var target_counts = {
+		GameManager.Division.TRANSPORT: 2,
+		GameManager.Division.FORTIFICATION: 5,
+		GameManager.Division.RESEARCH: 5,
+		GameManager.Division.INTERVENTION: 2
+	}
+	
+	for div_enum in target_counts.keys():
+		var target_num = target_counts[div_enum]
+		
+		# 计算当前已分派的实际人数
+		var current_members = []
+		var leader = GameManager.get_division_leader(div_enum)
+		if leader and leader.is_on_board:
+			current_members.append(leader)
+		for sub in GameManager.get_division_members(div_enum):
+			if sub.is_on_board:
+				current_members.append(sub)
+				
+		var needed = target_num - current_members.size()
+		for _i in range(needed):
+			if pool.is_empty():
+				break
+			var next_mname = pool.pop_back()
+			var m = GameManager.members.get(next_mname)
+			
+			var has_leader = false
+			var test_leader = GameManager.get_division_leader(div_enum)
+			if test_leader and test_leader.is_on_board:
+				has_leader = true
+				
+			m.division = div_enum
+			if not has_leader:
+				m.is_leader = true
+				m.rank = 1
+			else:
+				m.is_leader = false
+				m.rank = 1
+
+func _sync_benched_card_nodes():
+	# 确保 _benched_card_nodes 中有且仅有 _benched_members 中的成员卡牌节点
+	# 1. 移除多余的节点
+	var keys_to_remove = []
+	for mname in _benched_card_nodes.keys():
+		if mname not in _benched_members:
+			keys_to_remove.append(mname)
+			
+	for mname in keys_to_remove:
+		var node = _benched_card_nodes[mname]
+		if is_instance_valid(node):
+			node.queue_free()
+		_benched_card_nodes.erase(mname)
+			
+	# 2. 创建缺少的节点
+	for mname in _benched_members:
+		if not _benched_card_nodes.has(mname):
+			var card_node = _create_card_node(mname, true)
+			add_child(card_node)
+			
+			# 如果该成员在 _step1_grid 中有对应的 GridContainer，我们将位置先设在其上
+			var grid_idx = GameManager.MEMBER_DEFS.find(mname)
+			if grid_idx != -1 and is_instance_valid(_step1_grid) and grid_idx < _step1_grid.get_child_count():
+				var grid_container = _step1_grid.get_child(grid_idx) as Control
+				if is_instance_valid(grid_container):
+					card_node.position = grid_container.global_position
+			else:
+				card_node.position = Vector2(958.0, 862.0)
+				
+			card_node.visible = (_current_step == 1)
+			_benched_card_nodes[mname] = card_node
+			
+	# 3. 重新对齐布局
+	_layout_benched_cards()

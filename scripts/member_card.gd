@@ -422,8 +422,8 @@ func set_highlighted(on: bool) -> void:
 		modulate = Color.WHITE
 		halo_sprite.modulate.a = 1.0
 		_highlight_tween = create_tween().set_loops()
-		_highlight_tween.tween_property(halo_sprite, "modulate:a", 1.0, 0.45)
 		_highlight_tween.tween_property(halo_sprite, "modulate:a", 0.3, 0.45)
+		_highlight_tween.tween_property(halo_sprite, "modulate:a", 1.0, 0.45)
 	else:
 		modulate = Color.WHITE
 		halo_sprite.modulate.a = 1.0

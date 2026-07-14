@@ -468,19 +468,95 @@ func _on_sandbox_pressed():
 		_set_top_buttons_visible(true)
 		_on_reset_pressed()
 	else:
-		# 开启沙盒向导
-		var wizard_script := preload("res://scripts/ui/sandbox_setup_wizard.gd")
-		_sandbox_wizard = wizard_script.new()
-		_sandbox_wizard.completed.connect(_on_wizard_completed)
-		_sandbox_wizard.closed.connect(_on_wizard_closed)
-		_ui_layer.add_child(_sandbox_wizard)
+		# 如果当前正常模式已经有进度，弹出警告确认窗口
+		if GameManager.turn_count > 0 or not GameManager.current_encounter.is_empty():
+			_show_sandbox_confirmation_popup()
+		else:
+			_start_sandbox_wizard()
 
-		# 布阵导向期间，隐藏上方三个游戏按钮
-		_set_top_buttons_visible(false)
+func _show_sandbox_confirmation_popup():
+	# 创建黑色半透明背景遮罩
+	var backdrop := Control.new()
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	_ui_layer.add_child(backdrop)
+	
+	var color_rect := ColorRect.new()
+	color_rect.color = Color(0, 0, 0, 0.45)
+	color_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.add_child(color_rect)
+	
+	# 居中的 PanelContainer 控制面板
+	var panel := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.08, 0.12, 0.98)
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(0.7, 0.55, 0.2, 0.8) # 金色边框
+	style.shadow_color = Color(0, 0, 0, 0.6)
+	style.shadow_size = 15
+	style.content_margin_left = 25
+	style.content_margin_right = 25
+	style.content_margin_top = 20
+	style.content_margin_bottom = 20
+	panel.add_theme_stylebox_override("panel", style)
+	
+	var panel_size := Vector2(420, 190)
+	panel.size = panel_size
+	var vp := get_viewport_rect().size
+	panel.position = Vector2((vp.x - panel_size.x) * 0.5, (vp.y - panel_size.y) * 0.5)
+	backdrop.add_child(panel)
+	
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 18)
+	panel.add_child(vbox)
+	
+	var title_lbl := Label.new()
+	title_lbl.text = "⚠️ 警告"
+	title_lbl.add_theme_font_size_override("font_size", 16)
+	title_lbl.add_theme_color_override("font_color", Color(0.95, 0.35, 0.35))
+	vbox.add_child(title_lbl)
+	
+	var text_lbl := Label.new()
+	text_lbl.text = "进入沙盒模式将会清空当前正在进行的游戏局进度。\n您确定要切换至沙盒模式吗？"
+	text_lbl.add_theme_font_size_override("font_size", 14)
+	text_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(text_lbl)
+	
+	var btn_hbox := HBoxContainer.new()
+	btn_hbox.alignment = BoxContainer.ALIGNMENT_END
+	btn_hbox.add_theme_constant_override("separation", 15)
+	vbox.add_child(btn_hbox)
+	
+	var cancel_btn := Button.new()
+	cancel_btn.text = " 取消 "
+	cancel_btn.pressed.connect(func(): backdrop.queue_free())
+	btn_hbox.add_child(cancel_btn)
+	
+	var ok_btn := Button.new()
+	ok_btn.text = " 确定 "
+	ok_btn.pressed.connect(func():
+		backdrop.queue_free()
+		_start_sandbox_wizard()
+	)
+	btn_hbox.add_child(ok_btn)
 
-		# 临时将按钮显示为“正在布阵...”
-		_sandbox_btn.text = "🛠 正在布阵..."
-		_set_button_color(_sandbox_btn, Color(0.6, 0.4, 0.1))
+func _start_sandbox_wizard():
+	# 开启沙盒向导
+	var wizard_script := preload("res://scripts/ui/sandbox_setup_wizard.gd")
+	_sandbox_wizard = wizard_script.new()
+	_sandbox_wizard.completed.connect(_on_wizard_completed)
+	_sandbox_wizard.closed.connect(_on_wizard_closed)
+	_ui_layer.add_child(_sandbox_wizard)
+
+	# 布阵导向期间，隐藏上方三个游戏按钮
+	_set_top_buttons_visible(false)
+
+	# 临时将按钮显示为“正在布阵...”
+	_sandbox_btn.text = "🛠 正在布阵..."
+	_set_button_color(_sandbox_btn, Color(0.6, 0.4, 0.1))
 
 func _on_wizard_completed():
 	_sandbox_wizard = null
@@ -488,6 +564,25 @@ func _on_wizard_completed():
 	print("Sandbox Wizard completed: Sandbox Mode active!")
 	_update_sandbox_button_ui()
 	_set_top_buttons_visible(true)
+	_refresh_ui_after_sandbox_activation()
+
+func _refresh_ui_after_sandbox_activation():
+	# 隐藏突袭和挑战主脑按钮
+	for div in _safehouse_buttons:
+		_safehouse_buttons[div].visible = false
+	_mastermind_btn.visible = false
+	
+	# 重设提示文本
+	_queue_label.text = ""
+	_info_label.text = "点击「开始遭遇」继续"
+	_turn_label.text = "回合: " + str(GameManager.turn_count)
+	
+	# 重设卡牌高亮和操作遮罩
+	_card_overlay.dismiss()
+	_board.clear_highlights()
+	
+	# 刷新顶级控制按钮状态 (开始遭遇、处理下一波)
+	_update_ui_state()
 
 func _on_wizard_closed():
 	_sandbox_wizard = null

@@ -112,6 +112,45 @@ class MemberState:
 		c.equipment_count = equipment_count
 		return c
 
+	func to_dict() -> Dictionary:
+		return {
+			"member_name": member_name,
+			"portrait_path": portrait_path,
+			"division": division,
+			"is_leader": is_leader,
+			"rank": rank,
+			"is_imprisoned": is_imprisoned,
+			"prison_turns_left": prison_turns_left,
+			"prison_rank_snapshot": prison_rank_snapshot,
+			"prison_intel_per_turn_points": prison_intel_per_turn_points,
+			"is_on_board": is_on_board,
+			"cached_betray_effect": cached_betray_effect,
+			"cached_bargain_effect": cached_bargain_effect,
+			"cached_bargain_target": cached_bargain_target,
+			"is_revealed": is_revealed,
+			"equipment_count": equipment_count
+		}
+
+	static func from_dict(d: Dictionary) -> MemberState:
+		var m = MemberState.new(d.get("member_name", ""), d.get("portrait_path", ""))
+		m.update_from_dict(d)
+		return m
+
+	func update_from_dict(d: Dictionary):
+		division = int(d.get("division", 0))
+		is_leader = bool(d.get("is_leader", false))
+		rank = int(d.get("rank", 1))
+		is_imprisoned = bool(d.get("is_imprisoned", false))
+		prison_turns_left = int(d.get("prison_turns_left", 0))
+		prison_rank_snapshot = int(d.get("prison_rank_snapshot", -1))
+		prison_intel_per_turn_points = int(d.get("prison_intel_per_turn_points", 0))
+		is_on_board = bool(d.get("is_on_board", true))
+		cached_betray_effect = int(d.get("cached_betray_effect", -1))
+		cached_bargain_effect = int(d.get("cached_bargain_effect", -1))
+		cached_bargain_target = d.get("cached_bargain_target", "")
+		is_revealed = bool(d.get("is_revealed", false))
+		equipment_count = int(d.get("equipment_count", 0))
+
 class RelationshipEntry:
 	var member_a: String
 	var member_b: String
@@ -123,6 +162,16 @@ class RelationshipEntry:
 
 	func clone() -> RelationshipEntry:
 		return RelationshipEntry.new(member_a, member_b, type)
+
+	func to_dict() -> Dictionary:
+		return {
+			"member_a": member_a,
+			"member_b": member_b,
+			"type": type
+		}
+
+	static func from_dict(d: Dictionary) -> RelationshipEntry:
+		return RelationshipEntry.new(d.get("member_a", ""), d.get("member_b", ""), int(d.get("type", 0)))
 
 # ===== 状态变量 =====
 var is_sandbox_mode: bool = false            # 是否处于沙盒调试/自由布阵模式
@@ -541,6 +590,7 @@ func generate_encounter() -> Dictionary:
 	encounter_started.emit(current_encounter)
 	board_changed.emit()
 	encounter_queue_advanced.emit(encounter_queue.size())
+	save_game_to_disk()
 	return current_encounter
 
 func _division_has_encounterable(div: int) -> bool:
@@ -790,6 +840,7 @@ func advance_encounter_queue() -> Dictionary:
 	encounter_started.emit(current_encounter)
 	board_changed.emit()
 	encounter_queue_advanced.emit(encounter_queue.size())
+	save_game_to_disk()
 	return current_encounter
 
 # ================================================================
@@ -825,6 +876,7 @@ func execute_action(member_name: String, action: int):
 	action_executed.emit(result)
 	board_changed.emit()
 	_check_encounter_end()
+	save_game_to_disk()
 
 # ===== 回合处理 =====
 func _process_prison_intel():
@@ -889,6 +941,7 @@ func raid_safehouse(div: int):
 	if mastermind_intel >= 1.0:
 		mastermind_ready.emit()
 	board_changed.emit()
+	save_game_to_disk()
 
 # ===== 主脑 =====
 func can_fight_mastermind() -> bool:
@@ -902,6 +955,7 @@ func fight_mastermind():
 	var result := {"action": "mastermind", "effects": ["击败了主脑卡塔莉娜！", "获得了独特奖励！"]}
 	action_executed.emit(result)
 	board_changed.emit()
+	save_game_to_disk()
 
 # ===== 撤销系统 =====
 func save_state():
@@ -983,6 +1037,7 @@ func undo():
 	else:
 		encounter_ended.emit()
 	encounter_queue_advanced.emit(encounter_queue.size())
+	save_game_to_disk()
 
 # ===== 工具函数 =====
 func get_action_name(action: int) -> String:
@@ -1036,3 +1091,149 @@ func initialize_sandbox_mode(active_names: Array[String]):
 	history_stack.clear()
 	
 	board_changed.emit()
+
+# ===== 磁盘持久化自动存取档系统 =====
+const SAVE_FILE_PATH = "user://game_save.json"
+
+func save_game_to_disk():
+	var save_data = {}
+	save_data["is_sandbox_mode"] = is_sandbox_mode
+	save_data["bench_pool"] = bench_pool
+	save_data["mastermind_intel"] = mastermind_intel
+	save_data["turn_count"] = turn_count
+	
+	save_data["intelligence"] = {}
+	for k in intelligence:
+		save_data["intelligence"][str(k)] = intelligence[k]
+		
+	save_data["members"] = {}
+	for k in members:
+		save_data["members"][k] = members[k].to_dict()
+		
+	var rels = []
+	for rel in relationships:
+		rels.append(rel.to_dict())
+	save_data["relationships"] = rels
+	
+	# 当前遭遇
+	var ce = current_encounter.duplicate()
+	if ce.has("members"):
+		var ce_m = []
+		for m in ce["members"]:
+			ce_m.append(m.member_name)
+		ce["members"] = ce_m
+	if ce.has("processed"):
+		ce["processed"] = ce["processed"].duplicate()
+	save_data["current_encounter"] = ce
+	
+	# 遭遇队列
+	var eq = []
+	for enc in encounter_queue:
+		var c_enc = enc.duplicate()
+		if enc.has("members"):
+			var eq_m = []
+			for m in enc["members"]:
+				eq_m.append(m.member_name)
+			c_enc["members"] = eq_m
+		if enc.has("processed"):
+			c_enc["processed"] = enc["processed"].duplicate()
+		eq.append(c_enc)
+	save_data["encounter_queue"] = eq
+	
+	# 监狱队列
+	save_data["prison_queue"] = prison_queue
+	
+	# 保存至本地磁盘
+	var file = FileAccess.open(SAVE_FILE_PATH, FileAccess.WRITE)
+	if file:
+		file.store_string(JSON.stringify(save_data, "\t"))
+		print("【自动存档】游戏进度已成功保存到磁盘：" + SAVE_FILE_PATH)
+
+func load_game_from_disk() -> bool:
+	if not FileAccess.file_exists(SAVE_FILE_PATH):
+		return false
+		
+	var file = FileAccess.open(SAVE_FILE_PATH, FileAccess.READ)
+	if not file:
+		return false
+		
+	var text = file.get_as_text()
+	var json = JSON.new()
+	if json.parse(text) != OK:
+		return false
+		
+	var data = json.data
+	if not data is Dictionary:
+		return false
+		
+	is_sandbox_mode = bool(data.get("is_sandbox_mode", false))
+	mastermind_intel = float(data.get("mastermind_intel", 0.0))
+	turn_count = int(data.get("turn_count", 0))
+	
+	# bench_pool
+	bench_pool.clear()
+	for mname in data.get("bench_pool", []):
+		bench_pool.append(str(mname))
+		
+	# intelligence
+	intelligence.clear()
+	var intel_data = data.get("intelligence", {})
+	for k in intel_data:
+		intelligence[int(k)] = float(intel_data[k])
+		
+	# members - 原地更新数据，不破坏引用
+	var members_data = data.get("members", {})
+	for k in members_data:
+		if members.has(k):
+			members[k].update_from_dict(members_data[k])
+		else:
+			# 以防万一如果有新卡，创建并装入
+			members[k] = MemberState.from_dict(members_data[k])
+		
+	# relationships
+	relationships.clear()
+	for rel_d in data.get("relationships", []):
+		relationships.append(RelationshipEntry.from_dict(rel_d))
+		
+	# current_encounter
+	var ce = data.get("current_encounter", {})
+	if not ce.is_empty():
+		var ce_m = []
+		for mname in ce.get("members", []):
+			if members.has(mname):
+				ce_m.append(members[mname])
+		ce["members"] = ce_m
+		if ce.has("processed"):
+			ce["processed"] = ce["processed"].duplicate()
+	current_encounter = ce
+	
+	# encounter_queue
+	encounter_queue.clear()
+	for enc in data.get("encounter_queue", []):
+		var c_enc = enc.duplicate()
+		var eq_m = []
+		for mname in enc.get("members", []):
+			if members.has(mname):
+				eq_m.append(members[mname])
+		c_enc["members"] = eq_m
+		if enc.has("processed"):
+			c_enc["processed"] = c_enc["processed"].duplicate()
+		encounter_queue.append(c_enc)
+	
+	# prison_queue
+	var pq_data = data.get("prison_queue", [])
+	prison_queue.clear()
+	for mname in pq_data:
+		prison_queue.append(str(mname))
+		
+	# 清空并初始化历史撤销记录
+	history_stack.clear()
+	
+	board_changed.emit()
+	print("【自动读档】已从磁盘恢复游戏进度：" + SAVE_FILE_PATH)
+	return true
+
+func delete_save_file():
+	if FileAccess.file_exists(SAVE_FILE_PATH):
+		DirAccess.remove_absolute(SAVE_FILE_PATH)
+		print("【自动存档】存档文件已删除。")

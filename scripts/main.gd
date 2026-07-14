@@ -33,6 +33,15 @@ func _ready():
 	_connect_manager_signals()
 	_connect_board_signals()
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE) 
+	
+	# 自动加载存档进度
+	var has_save = GameManager.load_game_from_disk()
+	if not has_save:
+		GameManager.initialize_game()
+	else:
+		_on_state_restored()
+		_on_queue_updated(GameManager.encounter_queue.size())
+		_update_sandbox_button_ui() 
 
 # ===== 构建面板（世界空间） =====
 func _build_board():
@@ -394,6 +403,7 @@ func _on_reset_pressed():
 	_board.queue_free()
 	await get_tree().process_frame
 	GameManager.initialize_game()
+	GameManager.delete_save_file()
 	_build_board()
 	_connect_board_signals()
 	_update_ui_state()
@@ -406,20 +416,33 @@ func _on_undo_pressed():
 
 func _on_state_restored():
 	_turn_label.text = "回合: " + str(GameManager.turn_count)
-	_info_label.text = "已撤销上一步操作"
 	_card_overlay.dismiss()
 	
 	_mastermind_btn.visible = GameManager.mastermind_intel >= 1.0
 	
+	# 恢复各部门藏身处按钮可见性
+	for div in _safehouse_buttons:
+		if GameManager.intelligence.has(div):
+			_safehouse_buttons[div].visible = GameManager.intelligence[div] >= 1.0
+		else:
+			_safehouse_buttons[div].visible = false
+			
 	_board.clear_highlights()
 	_update_ui_state()
+	
 	if not GameManager.current_encounter.is_empty():
+		var enc = GameManager.current_encounter
+		var div_name: String = GameManager.DIVISION_NAMES.get(enc.get("division", 0), "未知")
+		_info_label.text = "⚔ " + div_name + " 遭遇发生！点击卡片进行处理"
+		
 		var names: Array = []
 		var processed = GameManager.current_encounter.get("processed", [])
 		for m in GameManager.current_encounter.get("members", []):
 			if m.member_name not in processed:
 				names.append(m.member_name)
 		_board.highlight_cards(names)
+	else:
+		_info_label.text = "点击「开始遭遇」继续"
 
 # ===== 辅助 =====
 func _make_button(text: String, pos: Vector2, color: Color) -> Button:
@@ -565,6 +588,7 @@ func _on_wizard_completed():
 	_update_sandbox_button_ui()
 	_set_top_buttons_visible(true)
 	_refresh_ui_after_sandbox_activation()
+	GameManager.save_game_to_disk()
 
 func _refresh_ui_after_sandbox_activation():
 	# 隐藏突袭和挑战主脑按钮

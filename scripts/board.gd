@@ -521,6 +521,10 @@ func _on_board_changed():
 	var to_remove = []
 	for mname in _cards:
 		var card = _cards[mname]
+		# 确保在检查是否在场前，将卡牌绑定的数据指向 GameManager 中最新的实例指针
+		if GameManager.members.has(mname):
+			card.member_data = GameManager.members[mname]
+		
 		var ms = card.member_data
 		if ms == null or not ms.is_on_board:
 			to_remove.append(mname)

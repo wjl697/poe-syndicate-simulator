@@ -939,6 +939,7 @@ func _on_close_pressed():
 	# 退出沙盒模式，重置游戏数据为正常随机模式
 	GameManager.is_sandbox_mode = false
 	GameManager.initialize_game()
+	GameManager.delete_save_file()
 	
 	closed.emit()
 	queue_free()
@@ -1447,6 +1448,7 @@ func _load_preset(preset_name: String):
 		
 	# 6. 同步更新场景并重新渲染
 	GameManager.board_changed.emit()
+	GameManager.save_game_to_disk()
 	
 	# 重建UI状态
 	_rebuild_step1_grid()

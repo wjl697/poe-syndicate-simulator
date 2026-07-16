@@ -69,6 +69,11 @@ var _btn_recall_all: Button
 var _portrait_cache: Dictionary = {}       # 缓存所有成员的头像纹理，避免动画播放中发生磁盘 I/O
 var _all_slots: Array[ColorRect] = []
 
+# 属性设置与悬停预览面板状态
+var _active_editor_overlay: Control = null
+var _pending_hover_member: String = ""
+var _hover_timer: SceneTreeTimer = null
+
 func _ready():
 	add_to_group("sandbox_wizard")
 	# 允许鼠标穿透根节点，因为我们要点击背后的棋盘卡片
@@ -279,6 +284,26 @@ func handle_board_card_clicked(mname: String):
 					GameManager._set_relationship_type(first, mname, GameManager.RelationType.RIVALRY)
 				2: # 清除
 					GameManager._remove_relationship(first, mname)
+
+# ===== 响应主棋盘卡片被悬停的事件 =====
+func handle_board_card_hovered(mname: String, screen_pos: Vector2):
+	if _current_step != 4:
+		return
+	var m = GameManager.members.get(mname)
+	if m == null or m.division == GameManager.Division.NONE:
+		return
+		
+	_pending_hover_member = mname
+	var timer = get_tree().create_timer(0.12)
+	_hover_timer = timer
+	await timer.timeout
+	
+	if _hover_timer == timer and _pending_hover_member == mname:
+		_show_card_editor_overlay(mname, screen_pos)
+
+func handle_board_card_unhovered(mname: String):
+	if _pending_hover_member == mname:
+		_pending_hover_member = ""
 
 # ===== 构建 UI 界面 =====
 func _build_ui():
@@ -513,16 +538,20 @@ func _select_relation_mode(mode: int):
 
 # ===== 状态改变 & UI 刷新 =====
 func _update_step_ui():
-	# 显式控制手动管理的替补卡牌节点的可见性，防止在步骤 2/3 依然遗留在屏幕上
+	# 显式控制手动管理的替补卡牌节点的可见性，防止在步骤 2/3/4 依然遗留在屏幕上
 	for mname in _benched_card_nodes:
 		var node = _benched_card_nodes[mname]
 		if is_instance_valid(node):
 			node.visible = (_current_step == 1)
 
+	# 显式控制预设管理按钮的显示（仅步骤1和步骤4可用）
+	if is_instance_valid(_btn_manage_presets):
+		_btn_manage_presets.visible = (_current_step == 1 or _current_step == 4)
+
 	# 刷新步骤文字
 	match _current_step:
 		1:
-			_step_label.text = "步骤 1 / 3: 选择3名成员作为替补 (" + str(_benched_members.size()) + " / 3)"
+			_step_label.text = "步骤 1 / 4: 选择3名成员作为替补 (" + str(_benched_members.size()) + " / 3)"
 			_step1_panel.visible = true
 			_step2_panel.visible = false
 			_relation_hbox.visible = false
@@ -540,7 +569,7 @@ func _update_step_ui():
 			_rebuild_step1_grid()
 			_sync_benched_card_nodes()
 		2:
-			_step_label.text = "步骤 2 / 3: 摆放卡片位置 (" + str(_get_placed_count()) + " / 14)"
+			_step_label.text = "步骤 2 / 4: 部署部门成员 (" + str(_get_placed_count()) + " / 14)"
 			_step1_panel.visible = false
 			_step1_prison_row.visible = false
 			_step2_panel.visible = true
@@ -549,21 +578,43 @@ func _update_step_ui():
 			
 			_back_btn.disabled = false
 			_next_btn.text = "下一步"
-			_next_btn.disabled = (_get_placed_count() != 14)
+			_next_btn.disabled = false # 取消14张必须强行手动拉出的强制性，未分配的自动变为游民
 			_reset_btn.visible = true
 			
-			if is_instance_valid(_btn_auto_fill): _btn_auto_fill.visible = true
+			# 二步不再显示自动排兵按钮，改由玩家手动分配或通过一步预设初始化
+			if is_instance_valid(_btn_auto_fill): _btn_auto_fill.visible = false
 			if is_instance_valid(_btn_recall_all): _btn_recall_all.visible = true
 			
 			_connect_slot_inputs(true)
 			_rebuild_step2_dock()
 		3:
-			_step_label.text = "步骤 3 / 3: 编辑成员关系"
+			_step_label.text = "步骤 3 / 4: 绘制成员关系线"
 			_step1_panel.visible = false
 			_step1_prison_row.visible = false
 			_step2_panel.visible = false
 			_relation_hbox.visible = true
 			_relation_tip_label.visible = true
+			_relation_tip_label.text = "点击卡片来绘制关系连线"
+			
+			_back_btn.disabled = false
+			_next_btn.text = "下一步"
+			_next_btn.disabled = false
+			_reset_btn.visible = false
+			
+			if is_instance_valid(_btn_auto_fill): _btn_auto_fill.visible = false
+			if is_instance_valid(_btn_recall_all): _btn_recall_all.visible = false
+			
+			_connect_slot_inputs(false)
+			if _step3_relation_mode == -1:
+				_select_relation_mode(0) # 默认选中绿线
+		4:
+			_step_label.text = "步骤 4 / 4: 调整成员星级与监禁状态"
+			_step1_panel.visible = false
+			_step1_prison_row.visible = false
+			_step2_panel.visible = false
+			_relation_hbox.visible = false
+			_relation_tip_label.visible = true
+			_relation_tip_label.text = "点击棋盘卡牌打开状态面板，调整其星级和被关押回合数"
 			
 			_back_btn.disabled = false
 			_next_btn.text = "完成布阵"
@@ -574,8 +625,6 @@ func _update_step_ui():
 			if is_instance_valid(_btn_recall_all): _btn_recall_all.visible = false
 			
 			_connect_slot_inputs(false)
-			if _step3_relation_mode == -1:
-				_select_relation_mode(0) # 默认选中绿线
 func _create_card_node(mname: String, is_benched: bool) -> PanelContainer:
 	var card_scale := 0.9 * 0.42
 	var bg_w := 408.0 * card_scale
@@ -852,6 +901,10 @@ func _rebuild_step2_dock():
 
 # ===== 按钮事件 =====
 func _on_back_pressed():
+	if is_instance_valid(_active_editor_overlay):
+		_active_editor_overlay.queue_free()
+		_active_editor_overlay = null
+
 	if _current_step > 1:
 		# 如果从步骤3退回步骤2，清除建立关系的选择状态和卡牌高亮，防止效果残留
 		if _current_step == 3:
@@ -860,6 +913,15 @@ func _on_back_pressed():
 			if card:
 				if card.has_method("clear_highlights"):
 					card.clear_highlights()
+			
+			# 同时，将所有没有分配部门的成员（自由人）重新退回为未放置状态（回到下方坞中）
+			for mname in _selected_members:
+				var m = GameManager.members.get(mname)
+				if m and m.division == GameManager.Division.NONE:
+					m.is_on_board = false
+					m.is_leader = false
+					m.rank = 0
+			GameManager.board_changed.emit()
 
 		_current_step -= 1
 		
@@ -888,14 +950,44 @@ func _on_next_pressed():
 			
 			# 初始化游戏数据为沙盒模式并确定 active 人员
 			GameManager.initialize_sandbox_mode(_selected_members)
+			
+			# 显式初始化这 14 个人为未放置状态（待在底部 dock 里，is_on_board = false）
+			for mname in _selected_members:
+				var m = GameManager.members.get(mname)
+				if m:
+					m.is_on_board = false
+					m.division = GameManager.Division.NONE
+					m.is_leader = false
+					m.rank = 0
+			
 			_current_step = 2
 			_update_step_ui()
 	elif _current_step == 2:
-		if _get_placed_count() == 14:
-			_current_step = 3
-			_update_step_ui()
+		# 验证当前已被拖放到具体部门的卡片合理性
+		var validation_error = _validate_step2_layout()
+		if validation_error != "":
+			_show_validation_error_popup(validation_error)
+			return
+		
+		# 校验通过：将剩余未摆放的卡片（仍在 dock 里的）自动设为游民上阵并放置到自由人槽位
+		for mname in _selected_members:
+			var m = GameManager.members.get(mname)
+			if m and not m.is_on_board:
+				m.is_on_board = true
+				m.division = GameManager.Division.NONE
+				m.is_leader = false
+				m.rank = 0
+		
+		# 成功后，同步板子状态并推进到步骤3
+		GameManager.board_changed.emit()
+		_current_step = 3
+		_update_step_ui()
 	elif _current_step == 3:
-		# 验证当前布局是否符合游戏设定
+		# 关系连线绘制完毕，推进到第四步星级与监禁属性设置
+		_current_step = 4
+		_update_step_ui()
+	elif _current_step == 4:
+		# 完成布阵前，最后进行一次合规校验，防止属性调整阶段违背了人数限制
 		var validation_error = _validate_board_layout()
 		if validation_error != "":
 			_show_validation_error_popup(validation_error)
@@ -940,6 +1032,38 @@ func _validate_board_layout() -> String:
 			return div_name + " 部门必须有且仅有 1 名首领（当前有 " + str(l) + " 名）"
 			
 		# 总人数最少2人，最多5人
+		if c < 2:
+			return div_name + " 部门总人数不足（最少 2 人，当前仅有 " + str(c) + " 人）"
+		if c > 5:
+			return div_name + " 部门总人数过多（最多 5 人，当前已有 " + str(c) + " 人）"
+			
+	return ""
+
+func _validate_step2_layout() -> String:
+	# 仅验证被放置到具体部门的卡牌是否符合首领及人数法则（游民和仍待在 dock 中的卡片不算在内）
+	var div_counts := {}
+	var div_leaders := {}
+	for div in [GameManager.Division.TRANSPORT, GameManager.Division.FORTIFICATION, GameManager.Division.RESEARCH, GameManager.Division.INTERVENTION]:
+		div_counts[div] = 0
+		div_leaders[div] = 0
+		
+	for mname in _selected_members:
+		var m = GameManager.members.get(mname)
+		if m and m.is_on_board and m.division != GameManager.Division.NONE:
+			div_counts[m.division] = div_counts.get(m.division, 0) + 1
+			if m.is_leader:
+				div_leaders[m.division] = div_leaders.get(m.division, 0) + 1
+				
+	for div in div_counts:
+		var c = div_counts[div]
+		var l = div_leaders[div]
+		var div_name = GameManager.DIVISION_NAMES.get(div, "未知")
+		
+		# 每个部门必须有且仅有1名首领
+		if l != 1:
+			return div_name + " 部门必须有且仅有 1 名首领（当前有 " + str(l) + " 名）"
+			
+		# 每个部门总人数必须在 2 至 5 人之间
 		if c < 2:
 			return div_name + " 部门总人数不足（最少 2 人，当前仅有 " + str(c) + " 人）"
 		if c > 5:
@@ -1005,6 +1129,359 @@ func _show_validation_error_popup(message: String) -> void:
 	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	btn.pressed.connect(func(): backdrop.queue_free())
 	vbox.add_child(btn)
+
+func _show_card_editor_overlay(mname: String, screen_pos: Vector2) -> void:
+	if is_instance_valid(_active_editor_overlay):
+		# 如果已经有打开的编辑器面板，且就是该成员，直接返回
+		if _active_editor_overlay.name == "editor_" + mname:
+			return
+		# 否则，先销毁旧面板以展示新面板
+		_active_editor_overlay.queue_free()
+		_active_editor_overlay = null
+		
+	var m = GameManager.members.get(mname)
+	if m == null or m.division == GameManager.Division.NONE:
+		return
+		
+	# 1. 创建黑色半透明背景遮罩容器 (无需暗色背景，保持游戏界面明亮)
+	var backdrop := Control.new()
+	backdrop.name = "editor_" + mname
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(backdrop)
+	_active_editor_overlay = backdrop
+	
+	# 计算自适应对齐定位参数 (与普通模式的中心点对齐算法一致)
+	var center := screen_pos
+	var slot_w := 194.0
+	var slot_h := 236.0
+	var vp_size := get_viewport_rect().size
+	
+	# --- Y轴边界限制 ---
+	var min_y: float = slot_h * 0.5 + 20.0
+	var max_y: float = vp_size.y - slot_h * 0.5 - 20.0
+	center.y = clampf(center.y, min_y, max_y)
+	
+	# --- X轴边界限制 ---
+	var min_x: float = slot_w * 1.5 + 20.0
+	var max_x: float = vp_size.x - slot_w * 1.5 - 20.0
+	center.x = clampf(center.x, min_x, max_x)
+	
+	# 2. 第一层：透明黑色背板 (三连板) 并命名为 Panel 用于划出判定
+	var base_bg := ColorRect.new()
+	base_bg.name = "Panel"
+	base_bg.color = Color(0, 0, 0, 0.88)
+	base_bg.size = Vector2(slot_w * 3, slot_h)
+	base_bg.position = center - Vector2(slot_w * 1.5, slot_h * 0.5)
+	base_bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	backdrop.add_child(base_bg)
+	
+	# 3. 第二层：加载并渲染“选项背板.png”艺术图
+	var tex_btn_bg := preload("res://辛迪加素材/界面UI/选项背板.png")
+	var frame_size := tex_btn_bg.get_size() * 0.75
+	var middle_frame := TextureRect.new()
+	middle_frame.texture = tex_btn_bg
+	middle_frame.expand_mode = TextureRect.EXPAND_KEEP_SIZE
+	middle_frame.stretch_mode = TextureRect.STRETCH_KEEP_CENTERED
+	middle_frame.size = frame_size
+	middle_frame.scale = Vector2(0.75, 0.75)
+	# 完美的 Y 轴对齐偏移量 (-11)
+	middle_frame.position = center - frame_size * 0.5 + Vector2(0, -11)
+	middle_frame.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	backdrop.add_child(middle_frame)
+	
+	# 4. 第三层：卡片与按钮的内容容器
+	var hbox := HBoxContainer.new()
+	hbox.add_theme_constant_override("separation", 0)
+	hbox.size = Vector2(slot_w * 3, slot_h)
+	hbox.position = base_bg.position
+	hbox.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	backdrop.add_child(hbox)
+	
+	var left_section := Control.new()
+	left_section.custom_minimum_size = Vector2(194, 236)
+	hbox.add_child(left_section)
+	
+	var center_section := Control.new()
+	center_section.custom_minimum_size = Vector2(194, 236)
+	hbox.add_child(center_section)
+	
+	var right_section := Control.new()
+	right_section.custom_minimum_size = Vector2(194, 236)
+	hbox.add_child(right_section)
+	
+	# --- 中间栏：一比一复刻普通模式下的卡牌与释放按钮渲染 ---
+	# 加载卡牌渲染所需的各种美术材质
+	var tex_card_bg := preload("res://辛迪加素材/界面UI/人物背景.png")
+	var tex_halo_mem := preload("res://辛迪加素材/界面UI/成员光晕.png")
+	var tex_halo_lead := preload("res://辛迪加素材/界面UI/首领光晕.png")
+	
+	var sync_offset := Vector2(0, -11)
+	var card_native_size := tex_card_bg.get_size()
+	var auto_scale_f := 188.0 / card_native_size.y
+	var card_scale := Vector2(auto_scale_f, auto_scale_f)
+	
+	# 1. 卡片背景 (单独下移 11 像素)
+	var card_bg_sprite := Sprite2D.new()
+	card_bg_sprite.texture = tex_card_bg
+	card_bg_sprite.position = center + Vector2(0, 11) + sync_offset
+	card_bg_sprite.scale = card_scale
+	backdrop.add_child(card_bg_sprite)
+	
+	# 2. 卡牌光晕 (与 member_card.gd 保持一致的缩放与 Y 轴偏移比例)
+	var card_halo_sprite := Sprite2D.new()
+	card_halo_sprite.texture = tex_halo_lead if m.is_leader else tex_halo_mem
+	card_halo_sprite.position = card_bg_sprite.position + Vector2(0, tex_card_bg.get_size().y * auto_scale_f * MemberCard.HALO_Y_OFFSET_RATIO)
+	card_halo_sprite.scale = card_scale * MemberCard.HALO_SCALE_MULT
+	backdrop.add_child(card_halo_sprite)
+	
+	# 3. 头像 (与 member_card.gd 保持一致的缩放与 Y 轴偏移比例)
+	var portrait_sprite := Sprite2D.new()
+	var ptex: Texture2D = load(m.portrait_path)
+	if ptex:
+		portrait_sprite.texture = ptex
+		var bg_size := tex_card_bg.get_size() * auto_scale_f
+		var p_size: Vector2 = ptex.get_size()
+		var fit: float = minf(bg_size.x * MemberCard.PORTRAIT_FIT_SCALE / p_size.x, bg_size.y * MemberCard.PORTRAIT_FIT_SCALE / p_size.y)
+		portrait_sprite.scale = Vector2(fit, fit)
+	portrait_sprite.position = card_bg_sprite.position + Vector2(0, tex_card_bg.get_size().y * auto_scale_f * MemberCard.PORTRAIT_Y_OFFSET_RATIO)
+	backdrop.add_child(portrait_sprite)
+	
+	# 4. 部门标志 (左上角角标)
+	var div_icon_path := ""
+	match m.division:
+		GameManager.Division.TRANSPORT: div_icon_path = "res://辛迪加素材/界面UI/运输部角标.png"
+		GameManager.Division.FORTIFICATION: div_icon_path = "res://辛迪加素材/界面UI/防卫部角标.png"
+		GameManager.Division.RESEARCH: div_icon_path = "res://辛迪加素材/界面UI/科研部角标.png"
+		GameManager.Division.INTERVENTION: div_icon_path = "res://辛迪加素材/界面UI/调停部角标.png"
+		
+	if div_icon_path != "" and FileAccess.file_exists(div_icon_path):
+		var div_sprite := Sprite2D.new()
+		div_sprite.texture = load(div_icon_path)
+		div_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		div_sprite.position = card_bg_sprite.position + MemberCard.BADGE_BASE_POS * auto_scale_f
+		div_sprite.scale = Vector2(MemberCard.BADGE_BASE_SCALE, MemberCard.BADGE_BASE_SCALE) * auto_scale_f
+		div_sprite.modulate.a = 0.8
+		backdrop.add_child(div_sprite)
+		
+	# 5. 星级等级标志 (右上角角标)
+	var rank_icon_path := ""
+	match m.rank:
+		1: rank_icon_path = "res://辛迪加素材/界面UI/一星等级.png"
+		2: rank_icon_path = "res://辛迪加素材/界面UI/二星等级.png"
+		3: rank_icon_path = "res://辛迪加素材/界面UI/三星等级.png"
+		
+	if rank_icon_path != "" and FileAccess.file_exists(rank_icon_path):
+		var rank_sprite := Sprite2D.new()
+		rank_sprite.texture = load(rank_icon_path)
+		rank_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
+		rank_sprite.position = card_bg_sprite.position + MemberCard.STAR_BASE_POS * auto_scale_f
+		rank_sprite.scale = Vector2(MemberCard.STAR_BASE_SCALE, MemberCard.STAR_BASE_SCALE) * auto_scale_f
+		if m.rank == 3:
+			rank_sprite.position += Vector2(-22, -18) * auto_scale_f
+		rank_sprite.modulate.a = 0.8
+		backdrop.add_child(rank_sprite)
+		
+	# 6. 文字信息 Label (完全参考 member_card.gd 比例对齐，字号 20 的黑色名字)
+	var bg_size_scaled := tex_card_bg.get_size() * auto_scale_f
+	var name_lbl := Label.new()
+	name_lbl.text = m.member_name
+	name_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	name_lbl.add_theme_font_size_override("font_size", 20)
+	name_lbl.add_theme_color_override("font_color", Color(0, 0, 0))
+	name_lbl.size = Vector2(bg_size_scaled.x * 0.8, 30)
+	name_lbl.position = card_bg_sprite.position + Vector2(-bg_size_scaled.x * 0.4, bg_size_scaled.y * 0.2)
+	backdrop.add_child(name_lbl)
+	
+	var info_lbl := Label.new()
+	info_lbl.text = "首领" if m.is_leader else ""
+	info_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	info_lbl.add_theme_font_size_override("font_size", 12)
+	info_lbl.add_theme_color_override("font_color", Color(0.8, 0.7, 0.5))
+	info_lbl.size = Vector2(bg_size_scaled.x * 0.8, 22)
+	info_lbl.position = card_bg_sprite.position + Vector2(-bg_size_scaled.x * 0.4, bg_size_scaled.y * 0.2 + 30)
+	backdrop.add_child(info_lbl)
+	
+	# 7. 释放按钮：X轴居中，Y轴对齐到背板边缘低处 (一比一复制正常模式)
+	var release_btn := Button.new()
+	release_btn.text = "释放"
+	release_btn.custom_minimum_size = Vector2(110, 30)
+	release_btn.position = center + Vector2(-55, 95)
+	_style_action_button(release_btn)
+	backdrop.add_child(release_btn)
+	
+	release_btn.pressed.connect(func():
+		m.is_imprisoned = false
+		m.prison_turns_left = 0
+		if mname in GameManager.prison_queue:
+			GameManager.prison_queue.erase(mname)
+		GameManager.board_changed.emit()
+		_active_editor_overlay = null
+		backdrop.queue_free()
+	)
+	
+	# --- 临时选择状态 ---
+	var selection = {
+		"turns": m.prison_turns_left if m.prison_turns_left > 0 else 3,
+		"rank": m.rank if m.rank > 0 else 1
+	}
+	
+	var left_opt_btns := []
+	var right_opt_btns := []
+	
+	var update_opt_visuals = func():
+		# 刷新左侧刑期选项外观
+		for idx in range(3):
+			var turns_val = 3 - idx
+			var btn = left_opt_btns[idx]
+			if selection["turns"] == turns_val:
+				btn.text = "▶ 剩余 " + str(turns_val) + " 回合 ◀"
+				btn.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+			else:
+				btn.text = "   剩余 " + str(turns_val) + " 回合   "
+				btn.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+				
+		# 刷新右侧星级选项外观
+		for idx in range(3):
+			var rank_val = 3 - idx
+			var btn = right_opt_btns[idx]
+			var stars = ""
+			for s in range(rank_val):
+				stars += "★"
+			if selection["rank"] == rank_val:
+				btn.text = "▶ " + stars + " " + str(rank_val) + "星 ◀"
+				btn.add_theme_color_override("font_color", Color(1.0, 0.85, 0.4))
+			else:
+				btn.text = "   " + stars + " " + str(rank_val) + "星   "
+				btn.add_theme_color_override("font_color", Color(0.8, 0.8, 0.8))
+				
+	# --- 左侧栏：关押回合数选项 & 审讯按钮 ---
+	for idx in range(3):
+		var turns_val = 3 - idx
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(160, 30)
+		btn.position = Vector2((194.0 - 160) * 0.5, 20.0 + idx * 45.0)
+		
+		# 使用全透明 StyleBox，仅靠文字和颜色标识选中状态
+		var empty_style := StyleBoxEmpty.new()
+		btn.add_theme_stylebox_override("normal", empty_style)
+		btn.add_theme_stylebox_override("hover", empty_style)
+		btn.add_theme_stylebox_override("pressed", empty_style)
+		btn.add_theme_font_size_override("font_size", 13)
+		
+		var val_copy = turns_val
+		btn.pressed.connect(func():
+			selection["turns"] = val_copy
+			update_opt_visuals.call()
+		)
+		left_section.add_child(btn)
+		left_opt_btns.append(btn)
+		
+	var interrogate_btn := Button.new()
+	interrogate_btn.text = "审讯"
+	interrogate_btn.custom_minimum_size = Vector2(110, 30)
+	interrogate_btn.position = Vector2((194.0 - 110) * 0.5, 236.0 - 38.0)
+	_style_action_button(interrogate_btn)
+	left_section.add_child(interrogate_btn)
+	
+	interrogate_btn.pressed.connect(func():
+		# 1. 验证牢房是否已满
+		var active_prisons_count = GameManager.prison_queue.size()
+		if mname in GameManager.prison_queue:
+			active_prisons_count -= 1
+		if active_prisons_count >= 3:
+			_show_validation_error_popup("牢房已满（上限 3 人），请先释放其他在押成员。")
+			return
+			
+		# 2. 如果他是首领，关押将导致卸任并提拔新首领
+		if m.is_leader:
+			m.is_leader = false
+			m.is_imprisoned = true
+			m.prison_turns_left = selection["turns"]
+			m.prison_intel_division = m.division
+			if mname not in GameManager.prison_queue:
+				GameManager.prison_queue.append(mname)
+			GameManager._promote_new_leader(m.division)
+		else:
+			m.is_imprisoned = true
+			m.prison_turns_left = selection["turns"]
+			m.prison_intel_division = m.division
+			if mname not in GameManager.prison_queue:
+				GameManager.prison_queue.append(mname)
+				
+		GameManager.board_changed.emit()
+		_active_editor_overlay = null
+		backdrop.queue_free()
+	)
+	
+	# --- 右侧栏：星级选项 & 处决按钮 ---
+	for idx in range(3):
+		var rank_val = 3 - idx
+		var btn := Button.new()
+		btn.custom_minimum_size = Vector2(160, 30)
+		btn.position = Vector2((194.0 - 160) * 0.5, 20.0 + idx * 45.0)
+		
+		var empty_style := StyleBoxEmpty.new()
+		btn.add_theme_stylebox_override("normal", empty_style)
+		btn.add_theme_stylebox_override("hover", empty_style)
+		btn.add_theme_stylebox_override("pressed", empty_style)
+		btn.add_theme_font_size_override("font_size", 13)
+		
+		var val_copy = rank_val
+		btn.pressed.connect(func():
+			selection["rank"] = val_copy
+			update_opt_visuals.call()
+		)
+		right_section.add_child(btn)
+		right_opt_btns.append(btn)
+		
+	var execute_btn := Button.new()
+	execute_btn.text = "处决"
+	execute_btn.custom_minimum_size = Vector2(110, 30)
+	execute_btn.position = Vector2((194.0 - 110) * 0.5, 236.0 - 38.0)
+	_style_action_button(execute_btn)
+	right_section.add_child(execute_btn)
+	
+	execute_btn.pressed.connect(func():
+		m.rank = selection["rank"]
+		GameManager.board_changed.emit()
+		_active_editor_overlay = null
+		backdrop.queue_free()
+	)
+	
+	# 初始化高亮渲染
+	update_opt_visuals.call()
+
+func _style_action_button(btn: Button) -> void:
+	btn.add_theme_font_size_override("font_size", 13)
+	btn.add_theme_color_override("font_color", Color(1.0, 0.9, 0.8))
+	
+	var style := StyleBoxTexture.new()
+	style.texture = preload("res://辛迪加素材/界面UI/按钮.png")
+	style.texture_margin_left = 6
+	style.texture_margin_right = 6
+	style.texture_margin_top = 6
+	style.texture_margin_bottom = 6
+	btn.add_theme_stylebox_override("normal", style)
+	
+	var hover := style.duplicate()
+	hover.modulate_color = Color(1.2, 1.2, 1.2)
+	btn.add_theme_stylebox_override("hover", hover)
+	
+	var pressed := style.duplicate()
+	pressed.modulate_color = Color(0.8, 0.8, 0.8)
+	btn.add_theme_stylebox_override("pressed", pressed)
+
+func _process(_delta: float) -> void:
+	if is_instance_valid(_active_editor_overlay):
+		var panel = _active_editor_overlay.get_node_or_null("Panel")
+		if panel:
+			var mpos = get_global_mouse_position()
+			# 使用与 CardActionOverlay 一致的无边框透明黑色面板包围判定
+			if not panel.get_global_rect().has_point(mpos):
+				_active_editor_overlay.queue_free()
+				_active_editor_overlay = null
 
 func _on_reset_pressed():
 	if _current_step == 1:
@@ -1258,10 +1735,12 @@ func _show_presets_management_popup():
 	
 	var save_btn := Button.new()
 	save_btn.text = "💾 保存当前"
+	save_btn.visible = (_current_step == 4)
 	btn_hbox.add_child(save_btn)
 	
 	var new_btn := Button.new()
 	new_btn.text = "➕ 另存为"
+	new_btn.visible = (_current_step == 4)
 	btn_hbox.add_child(new_btn)
 	
 	var delete_btn := Button.new()
@@ -1473,10 +1952,22 @@ func _save_current_layout_to_preset(preset_name: String):
 			"type": rel.type
 		})
 		
+	var states_data = {}
+	for mname in _selected_members:
+		var m = GameManager.members.get(mname)
+		if m:
+			states_data[mname] = {
+				"rank": m.rank,
+				"is_imprisoned": m.is_imprisoned,
+				"prison_turns_left": m.prison_turns_left,
+				"prison_intel_division": m.prison_intel_division
+			}
+		
 	_presets_dict["presets"][preset_name] = {
 		"benched": benched_list,
 		"divisions": div_data,
-		"relationships": rel_list
+		"relationships": rel_list,
+		"member_states": states_data
 	}
 	
 	_save_presets_to_file()
@@ -1546,6 +2037,20 @@ func _load_preset(preset_name: String):
 	# 3. 初始化并自动分配卡牌槽位
 	_auto_fill_placements(preset)
 	
+	# 加载各个成员的具体星级和监禁状态（如果存在）
+	var states_data = preset.get("member_states", {})
+	for mname in _selected_members:
+		var m = GameManager.members.get(mname)
+		if m and states_data.has(mname):
+			var s = states_data[mname]
+			m.rank = int(s.get("rank", 1))
+			m.is_imprisoned = bool(s.get("is_imprisoned", false))
+			m.prison_turns_left = int(s.get("prison_turns_left", 0))
+			m.prison_intel_division = int(s.get("prison_intel_division", 0))
+			if m.is_imprisoned:
+				if mname not in GameManager.prison_queue:
+					GameManager.prison_queue.append(mname)
+
 	# 4. 加载关系线连线
 	GameManager.relationships.clear()
 	for rel_data in preset.get("relationships", []):

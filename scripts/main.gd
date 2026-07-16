@@ -238,6 +238,10 @@ func _on_encounter_member_selected(_name: String):
 
 # ===== 卡片悬停处理 =====
 func _on_board_card_hovered(member_name: String, screen_pos: Vector2):
+	if _sandbox_wizard != null and is_instance_valid(_sandbox_wizard):
+		_sandbox_wizard.handle_board_card_hovered(member_name, screen_pos)
+		return
+
 	if GameManager.current_encounter.is_empty():
 		return
 
@@ -266,6 +270,10 @@ func _on_board_card_hovered(member_name: String, screen_pos: Vector2):
 		_card_overlay.show_member_actions(member, actions, screen_pos)
 
 func _on_board_card_unhovered(member_name: String):
+	if _sandbox_wizard != null and is_instance_valid(_sandbox_wizard):
+		_sandbox_wizard.handle_board_card_unhovered(member_name)
+		return
+
 	if _pending_hover_member == member_name:
 		_pending_hover_member = ""
 func _try_hide_action_panel():

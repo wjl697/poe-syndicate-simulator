@@ -19,6 +19,7 @@ var name_label: Label
 var prison_icon: Sprite2D
 var progress_bg: Sprite2D
 var progress_bar: TextureProgressBar
+var safehouse_btn: Button
 var prison_turn_badge: Sprite2D
 var prison_turn_label: Label
 var _hit_control: Control
@@ -29,21 +30,21 @@ var _tooltip_panel: PanelContainer = null
 static var _shared_prison_font_size: int = -1  # 类级别共享，所有实例只计算一次
 
 # 预加载纹理
-var _tex_bg        := preload("res://辛迪加素材/人物背景.png")
-var _tex_halo_mem  := preload("res://辛迪加素材/成员光晕.png")
-var _tex_halo_lead := preload("res://辛迪加素材/首领光晕.png")
-var _tex_star1     := preload("res://辛迪加素材/一星等级.png")
-var _tex_star2     := preload("res://辛迪加素材/二星等级.png")
-var _tex_star3     := preload("res://辛迪加素材/三星等级.png")
-var _tex_question  := preload("res://辛迪加素材/问号.png")
-var _tex_prison_turn := preload("res://辛迪加素材/回合数.png")
-var _font_main := preload("res://辛迪加素材/zt.ttf")
+var _tex_bg        := preload("res://辛迪加素材/界面UI/人物背景.png")
+var _tex_halo_mem  := preload("res://辛迪加素材/界面UI/成员光晕.png")
+var _tex_halo_lead := preload("res://辛迪加素材/界面UI/首领光晕.png")
+var _tex_star1     := preload("res://辛迪加素材/界面UI/一星等级.png")
+var _tex_star2     := preload("res://辛迪加素材/界面UI/二星等级.png")
+var _tex_star3     := preload("res://辛迪加素材/界面UI/三星等级.png")
+var _tex_question  := preload("res://辛迪加素材/界面UI/问号.png")
+var _tex_prison_turn := preload("res://辛迪加素材/界面UI/回合数.png")
+var _font_main := preload("res://辛迪加素材/字体/zt.ttf")
 
 # 部门角标纹理
-var _tex_badge_transport     := preload("res://辛迪加素材/运输部角标.png")
-var _tex_badge_fortification := preload("res://辛迪加素材/防卫部角标.png")
-var _tex_badge_research      := preload("res://辛迪加素材/科研部角标.png")
-var _tex_badge_intervention  := preload("res://辛迪加素材/调停部角标.png")
+var _tex_badge_transport     := preload("res://辛迪加素材/界面UI/运输部角标.png")
+var _tex_badge_fortification := preload("res://辛迪加素材/界面UI/防卫部角标.png")
+var _tex_badge_research      := preload("res://辛迪加素材/界面UI/科研部角标.png")
+var _tex_badge_intervention  := preload("res://辛迪加素材/界面UI/调停部角标.png")
 
 const PRISON_TURN_BADGE_SCALE := 1.1
 
@@ -131,17 +132,55 @@ func _build_tree():
 
 	# --- 部门情报进度条 ---
 	progress_bg = Sprite2D.new()
-	progress_bg.texture = preload("res://辛迪加素材/进度条背板.png")
+	progress_bg.texture = preload("res://辛迪加素材/界面UI/进度条背板.png")
 	progress_bg.z_index = 6
 	progress_bg.visible = false
 	add_child(progress_bg)
 
 	progress_bar = TextureProgressBar.new()
-	progress_bar.texture_under = preload("res://辛迪加素材/进度条.png")
-	progress_bar.texture_progress = preload("res://辛迪加素材/进度条黄色.png")
+	progress_bar.texture_under = preload("res://辛迪加素材/界面UI/进度条.png")
+	progress_bar.texture_progress = preload("res://辛迪加素材/界面UI/进度条黄色.png")
 	progress_bar.z_index = 7
 	progress_bar.visible = false
 	add_child(progress_bar)
+
+	# --- 安全屋按钮 ---
+	safehouse_btn = Button.new()
+	safehouse_btn.text = "安全屋"
+	safehouse_btn.z_index = 8
+	safehouse_btn.visible = false
+	
+	# 设置字体和字号
+	if _font_main:
+		safehouse_btn.add_theme_font_override("font", _font_main)
+	safehouse_btn.add_theme_font_size_override("font_size", 16)
+	
+	# 文字颜色：默认白色，悬停黄，按下褐
+	safehouse_btn.add_theme_color_override("font_color", Color.WHITE)
+	safehouse_btn.add_theme_color_override("font_hover_color", Color(1.0, 0.9, 0.6))
+	safehouse_btn.add_theme_color_override("font_pressed_color", Color(0.8, 0.7, 0.5))
+	
+	# 按钮样式：使用 按钮.png 纹理作为背景
+	var style_normal := StyleBoxTexture.new()
+	style_normal.texture = preload("res://辛迪加素材/界面UI/按钮.png")
+	
+	# 悬停微调颜色
+	var style_hover := style_normal.duplicate()
+	style_hover.modulate_color = Color(1.1, 1.05, 0.9, 1.0)
+	
+	# 按下微调颜色
+	var style_pressed := style_normal.duplicate()
+	style_pressed.modulate_color = Color(0.8, 0.8, 0.8, 1.0)
+	
+	safehouse_btn.add_theme_stylebox_override("normal", style_normal)
+	safehouse_btn.add_theme_stylebox_override("hover", style_hover)
+	safehouse_btn.add_theme_stylebox_override("pressed", style_pressed)
+	safehouse_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	
+	safehouse_btn.pressed.connect(_on_safehouse_btn_pressed)
+	safehouse_btn.gui_input.connect(_on_safehouse_btn_gui_input)
+	safehouse_btn.mouse_exited.connect(_on_safehouse_btn_mouse_exited)
+	add_child(safehouse_btn)
 
 	# --- 审讯剩余回合底图与文字 ---
 	prison_turn_badge = Sprite2D.new()
@@ -316,55 +355,99 @@ func update_display() -> void:
 
 	# 部门情报进度条更新逻辑（仅部门首领显示，未翻开时也可见）
 	if member_data.is_leader and member_data.division != GameManager.Division.NONE:
-		progress_bg.visible = true
-		progress_bar.visible = true
-		var pb_actual_size := Vector2.ZERO
-		var pb_scale := 1.1 # 缩小到 1.1 倍，保持合适的宽度和比例
-		
-		if progress_bar.texture_under:
-			var pb_native_size = progress_bar.texture_under.get_size()
-			
-			progress_bg.scale = Vector2(pb_scale, pb_scale)
-			pb_actual_size = pb_native_size * pb_scale
-			
-			# 将背板置于卡牌的最下方，微调向下移动 13 像素防止挡住名字
-			if bg_sprite.texture:
-				var bg_y = 198.0
-				var offset_x = 8.0 # 抵消素材图左侧纸张毛边导致的视觉偏左，向右微调 8 像素
-				
-				progress_bg.position = Vector2(offset_x, bg_y)
-				
-				# 必须显式设置 Control 的 size，否则 pivot_offset 缩放会因为默认 size 为 0 导致位置偏移
-				progress_bar.size = pb_native_size
-				progress_bar.pivot_offset = pb_native_size * 0.5
-				progress_bar.scale = Vector2(pb_scale, pb_scale)
-				
-				# 进度条背板下方有投影，导致视觉中心偏上。这里将进度条位置向上微调 10 像素，同时向右偏移 8 像素以与背板对准
-				progress_bar.position = Vector2(offset_x, bg_y - 10.0 * pb_scale) - pb_native_size * 0.5
-				
-				# 经精准检测，进度条轨道贴图(进度条.png)右侧有 15 像素透明空白，而左侧与黄色填充图(进度条黄色.png)均在 X=0 开始绘制左侧铜帽。
-				# 因此，X 轴偏移必须为 0 像素，而 Y 轴由于轨道上方有 15 像素透明空白，需要向下偏移 15 像素，此时两者铜帽才能完美重合，不产生重影。
-				progress_bar.texture_progress_offset = Vector2(0.0, 15.0)
-		else:
-			pb_actual_size = progress_bar.size
-		
-		# 读取该部门当前的情报值并转换为进度 (使用正确的变量名: intelligence)
 		var raw_val: float = GameManager.intelligence.get(member_data.division, 0.0)
 		var percent: float = raw_val if raw_val <= 1.0 else (raw_val / 100.0)
 		var percent_int: int = int(round(percent * 100.0))
-		var div_name: String = GameManager.DIVISION_NAMES.get(member_data.division, "未知部门")
-		progress_bar.max_value = 100
-		progress_bar.value = percent * 100
 		
-		# hover 触发区域也需要使用缩放后的实际居中范围
-		var hover_y = 198.0
-		var offset_x = 8.0
-		_progress_hover_rect = Rect2(-pb_actual_size.x * 0.5 + offset_x, hover_y - pb_actual_size.y * 0.5, pb_actual_size.x, pb_actual_size.y)
+		if percent_int >= 100:
+			# 满情报时：进度条背板仍显示，仅隐藏进度填充条，并在上面覆盖“安全屋”按钮
+			progress_bg.visible = true
+			progress_bar.visible = false
+			_progress_hover_rect = Rect2()
+			_progress_tooltip_text = ""
 			
-		_progress_tooltip_text = div_name + " 情报进度: " + str(percent_int) + "% (" + str(percent_int) + "/100)"
+			var pb_scale := 1.1
+			var offset_x := 8.0
+			var bg_y := 198.0
+			
+			progress_bg.scale = Vector2(pb_scale, pb_scale)
+			progress_bg.position = Vector2(offset_x, bg_y)
+			
+			if safehouse_btn:
+				safehouse_btn.visible = true
+				
+				# 人物卡牌尺寸固定，采用精确计算好的固定尺寸
+				var btn_size := Vector2(320, 70)
+				
+				# 👈 如果需要调整按钮左右或上下位置，可以修改下面这两个偏移值（正数向右/向下，负数向左/向上）
+				var btn_offset_x := -6.0
+				var btn_offset_y := 3.0
+				
+				# 锁定最小尺寸与实际尺寸，防止 Godot 自动收缩
+				safehouse_btn.custom_minimum_size = btn_size
+				safehouse_btn.size = btn_size
+				
+				# 将缩放设为 1.0 (等大)，完全避免因缩放中点偏移（pivot）导致的显示位置漂移
+				safehouse_btn.scale = Vector2.ONE
+				
+				# 坐标定位：以背板中心为基准，加上您的微调偏移量
+				safehouse_btn.position = Vector2(offset_x + btn_offset_x, bg_y - 10.0 * pb_scale + btn_offset_y) - btn_size * 0.5
+				
+				# 设定固定字号（当前为您手动调整的 35 号字）
+				safehouse_btn.add_theme_font_size_override("font_size", 38)
+				
+		else:
+			# 未满 100% 时，显示进度条，隐藏突袭按钮
+			if safehouse_btn:
+				safehouse_btn.visible = false
+				
+			progress_bg.visible = true
+			progress_bar.visible = true
+			var pb_actual_size := Vector2.ZERO
+			var pb_scale := 1.1 # 缩小到 1.1 倍，保持合适的宽度和比例
+			
+			if progress_bar.texture_under:
+				var pb_native_size = progress_bar.texture_under.get_size()
+				
+				progress_bg.scale = Vector2(pb_scale, pb_scale)
+				pb_actual_size = pb_native_size * pb_scale
+				
+				# 将背板置于卡牌的最下方，微调向下移动 13 像素防止挡住名字
+				if bg_sprite.texture:
+					var bg_y = 198.0
+					var offset_x = 8.0 # 抵消素材图左侧纸张毛边导致的视觉偏左，向右微调 8 像素
+					
+					progress_bg.position = Vector2(offset_x, bg_y)
+					
+					# 必须显式设置 Control 的 size，否则 pivot_offset 缩放会因为默认 size 为 0 导致位置偏移
+					progress_bar.size = pb_native_size
+					progress_bar.pivot_offset = pb_native_size * 0.5
+					progress_bar.scale = Vector2(pb_scale, pb_scale)
+					
+					# 进度条背板下方有投影，导致视觉中心偏上。这里将进度条位置向上微调 10 像素，同时向右偏移 8 像素以与背板对准
+					progress_bar.position = Vector2(offset_x, bg_y - 10.0 * pb_scale) - pb_native_size * 0.5
+					
+					# 经精准检测，进度条轨道贴图(进度条.png)右侧有 15 像素透明空白，而左侧与黄色填充图(进度条黄色.png)均在 X=0 开始绘制左侧铜帽。
+					# 因此，X 轴偏移必须为 0 像素，而 Y 轴由于轨道上方有 15 像素透明空白，需要向下偏移 15 像素，此时两者铜帽才能完美重合，不产生重影。
+					progress_bar.texture_progress_offset = Vector2(0.0, 15.0)
+			else:
+				pb_actual_size = progress_bar.size
+			
+			progress_bar.max_value = 100
+			progress_bar.value = percent * 100
+			
+			# hover 触发区域也需要使用缩放后的实际居中范围
+			var hover_y = 198.0
+			var offset_x = 8.0
+			_progress_hover_rect = Rect2(-pb_actual_size.x * 0.5 + offset_x, hover_y - pb_actual_size.y * 0.5, pb_actual_size.x, pb_actual_size.y)
+				
+			var div_name: String = GameManager.DIVISION_NAMES.get(member_data.division, "未知部门")
+			_progress_tooltip_text = div_name + " 情报进度: " + str(percent_int) + "% (" + str(percent_int) + "/100)"
 	else:
 		progress_bg.visible = false
 		progress_bar.visible = false
+		if safehouse_btn:
+			safehouse_btn.visible = false
 		_progress_hover_rect = Rect2()
 		_progress_tooltip_text = ""
 		if _hit_control:
@@ -477,3 +560,38 @@ func _update_progress_tooltip(local_pos_in_hit: Vector2) -> void:
 			_tooltip_panel.position = get_local_mouse_position() + Vector2(28, -14)
 	else:
 		_tooltip_panel.visible = false
+
+func _on_safehouse_btn_pressed():
+	if not is_instance_valid(GameManager):
+		return
+	if member_data and member_data.division != GameManager.Division.NONE:
+		GameManager.raid_safehouse(member_data.division)
+
+func _on_safehouse_btn_gui_input(event: InputEvent) -> void:
+	if event is InputEventMouseMotion:
+		_update_safehouse_tooltip()
+
+func _on_safehouse_btn_mouse_exited() -> void:
+	if _tooltip_panel:
+		_tooltip_panel.visible = false
+
+func _update_safehouse_tooltip() -> void:
+	if _tooltip_panel == null or member_data == null:
+		return
+	
+	# 动态计算剩余回合数
+	var turns_held = GameManager.turn_count - GameManager.safehouse_100_turns.get(member_data.division, GameManager.turn_count)
+	var remaining = 3 - turns_held
+	var text_content = "你已经掌握了当前安全屋情报的100%%\n请在 %d 回合内完成突袭，否则情报将衰减至 90%%！" % remaining
+	
+	_tooltip_panel.get_node("Label").text = text_content
+	_tooltip_panel.visible = true
+	
+	# 坐标微调：将水平位移调整为 32 像素以偏离鼠标指针，垂直位移调整为 -55 像素以显著高出指针尖端，彻底防止遮挡文字
+	var canvas_scale := get_canvas_transform().get_scale()
+	var s := global_scale * canvas_scale
+	if s.x > 0.001 and s.y > 0.001:
+		_tooltip_panel.scale = Vector2.ONE / s
+		_tooltip_panel.position = get_local_mouse_position() + Vector2(32, -55) / s
+	else:
+		_tooltip_panel.position = get_local_mouse_position() + Vector2(32, -55)

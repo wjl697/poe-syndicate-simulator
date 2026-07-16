@@ -17,11 +17,11 @@ var _card_info: Label              # 职位/部门
 var _action_panels: Array = []     # 操作面板节点列表
 
 # 纹理
-var _tex_bg := preload("res://辛迪加素材/人物背景.png")
-var _tex_halo_mem := preload("res://辛迪加素材/成员光晕.png")
-var _tex_halo_lead := preload("res://辛迪加素材/首领光晕.png")
-var _tex_btn_bg := preload("res://辛迪加素材/选项背板.png")
-var _tex_btn_main := preload("res://辛迪加素材/按钮.png")
+var _tex_bg := preload("res://辛迪加素材/界面UI/人物背景.png")
+var _tex_halo_mem := preload("res://辛迪加素材/界面UI/成员光晕.png")
+var _tex_halo_lead := preload("res://辛迪加素材/界面UI/首领光晕.png")
+var _tex_btn_bg := preload("res://辛迪加素材/界面UI/选项背板.png")
+var _tex_btn_main := preload("res://辛迪加素材/界面UI/按钮.png")
 
 func _ready():
 	visible = false
@@ -133,10 +133,10 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 	# --- 新增：部门标志 (左上角) ---
 	var div_icon_path := ""
 	match member.division:
-		GameManager.Division.TRANSPORT: div_icon_path = "res://辛迪加素材/运输部角标.png"
-		GameManager.Division.FORTIFICATION: div_icon_path = "res://辛迪加素材/防卫部角标.png"
-		GameManager.Division.RESEARCH: div_icon_path = "res://辛迪加素材/科研部角标.png"
-		GameManager.Division.INTERVENTION: div_icon_path = "res://辛迪加素材/调停部角标.png"
+		GameManager.Division.TRANSPORT: div_icon_path = "res://辛迪加素材/界面UI/运输部角标.png"
+		GameManager.Division.FORTIFICATION: div_icon_path = "res://辛迪加素材/界面UI/防卫部角标.png"
+		GameManager.Division.RESEARCH: div_icon_path = "res://辛迪加素材/界面UI/科研部角标.png"
+		GameManager.Division.INTERVENTION: div_icon_path = "res://辛迪加素材/界面UI/调停部角标.png"
 	
 	if div_icon_path != "" and FileAccess.file_exists(div_icon_path):
 		var div_sprite := Sprite2D.new()
@@ -150,9 +150,9 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 	# --- 新增：星级标志 (右上角) ---
 	var rank_icon_path := ""
 	match member.rank:
-		1: rank_icon_path = "res://辛迪加素材/一星等级.png"
-		2: rank_icon_path = "res://辛迪加素材/二星等级.png"
-		3: rank_icon_path = "res://辛迪加素材/三星等级.png"
+		1: rank_icon_path = "res://辛迪加素材/界面UI/一星等级.png"
+		2: rank_icon_path = "res://辛迪加素材/界面UI/二星等级.png"
+		3: rank_icon_path = "res://辛迪加素材/界面UI/三星等级.png"
 	
 	if rank_icon_path != "" and FileAccess.file_exists(rank_icon_path):
 		var rank_sprite := Sprite2D.new()

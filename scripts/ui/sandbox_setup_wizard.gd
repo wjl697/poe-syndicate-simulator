@@ -589,7 +589,7 @@ func _create_card_node(mname: String, is_benched: bool) -> PanelContainer:
 	container.add_child(card_area)
 
 	var bg_tex := TextureRect.new()
-	bg_tex.texture = preload("res://辛迪加素材/人物背景.png")
+	bg_tex.texture = preload("res://辛迪加素材/界面UI/人物背景.png")
 	bg_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg_tex.stretch_mode = TextureRect.STRETCH_SCALE
 	bg_tex.size = Vector2(bg_w, bg_h)
@@ -766,7 +766,7 @@ func _rebuild_step2_dock():
 
 		# 1. 纸张背景
 		var bg_tex := TextureRect.new()
-		bg_tex.texture = preload("res://辛迪加素材/人物背景.png")
+		bg_tex.texture = preload("res://辛迪加素材/界面UI/人物背景.png")
 		bg_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		bg_tex.stretch_mode = TextureRect.STRETCH_SCALE
 		bg_tex.size = Vector2(bg_w, bg_h)
@@ -853,6 +853,14 @@ func _rebuild_step2_dock():
 # ===== 按钮事件 =====
 func _on_back_pressed():
 	if _current_step > 1:
+		# 如果从步骤3退回步骤2，清除建立关系的选择状态和卡牌高亮，防止效果残留
+		if _current_step == 3:
+			_step3_first_selected_member = ""
+			var card = _get_board_node()
+			if card:
+				if card.has_method("clear_highlights"):
+					card.clear_highlights()
+
 		_current_step -= 1
 		
 		# 如果返回到了步骤1，清空所有已放置的卡片状态并同步棋盘，防止卡片遗留在背景中
@@ -887,10 +895,116 @@ func _on_next_pressed():
 			_current_step = 3
 			_update_step_ui()
 	elif _current_step == 3:
+		# 验证当前布局是否符合游戏设定
+		var validation_error = _validate_board_layout()
+		if validation_error != "":
+			_show_validation_error_popup(validation_error)
+			return
+
 		# 完成布阵，隐藏所有插槽，通知外面
 		_connect_slot_inputs(false)
 		completed.emit()
 		queue_free()
+
+func _validate_board_layout() -> String:
+	# 1. 验证总数
+	var count = 0
+	for mname in _selected_members:
+		var m = GameManager.members.get(mname)
+		if m and m.is_on_board:
+			count += 1
+	if count != 14:
+		return "场上必须有且仅有 14 名成员（当前已放置了 " + str(count) + " 名）"
+	
+	# 2. 验证每个部门的首领和人数 (最少2人，最多5人，且必须有首领)
+	var div_counts := {}
+	var div_leaders := {}
+	for div in [GameManager.Division.TRANSPORT, GameManager.Division.FORTIFICATION, GameManager.Division.RESEARCH, GameManager.Division.INTERVENTION]:
+		div_counts[div] = 0
+		div_leaders[div] = 0
+		
+	for mname in _selected_members:
+		var m = GameManager.members.get(mname)
+		if m and m.is_on_board and m.division != GameManager.Division.NONE:
+			div_counts[m.division] = div_counts.get(m.division, 0) + 1
+			if m.is_leader:
+				div_leaders[m.division] = div_leaders.get(m.division, 0) + 1
+				
+	for div in div_counts:
+		var c = div_counts[div]
+		var l = div_leaders[div]
+		var div_name = GameManager.DIVISION_NAMES.get(div, "未知")
+		
+		# 必须有且仅有1名首领
+		if l != 1:
+			return div_name + " 部门必须有且仅有 1 名首领（当前有 " + str(l) + " 名）"
+			
+		# 总人数最少2人，最多5人
+		if c < 2:
+			return div_name + " 部门总人数不足（最少 2 人，当前仅有 " + str(c) + " 人）"
+		if c > 5:
+			return div_name + " 部门总人数过多（最多 5 人，当前已有 " + str(c) + " 人）"
+			
+	return ""
+
+func _show_validation_error_popup(message: String) -> void:
+	var backdrop := Control.new()
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(backdrop)
+	
+	var color_rect := ColorRect.new()
+	color_rect.color = Color(0, 0, 0, 0.45)
+	color_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.add_child(color_rect)
+	
+	var panel := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.12, 0.12, 0.16, 0.99)
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(0.8, 0.3, 0.3, 0.8) # 红色边框表示错误
+	style.shadow_color = Color(0, 0, 0, 0.8)
+	style.shadow_size = 10
+	style.content_margin_left = 25
+	style.content_margin_right = 25
+	style.content_margin_top = 20
+	style.content_margin_bottom = 20
+	panel.add_theme_stylebox_override("panel", style)
+	
+	var panel_size := Vector2(400, 180)
+	panel.size = panel_size
+	var vp := get_viewport_rect().size
+	panel.position = Vector2((vp.x - panel_size.x) * 0.5, (vp.y - panel_size.y) * 0.5)
+	backdrop.add_child(panel)
+	
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 20)
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	panel.add_child(vbox)
+	
+	var title_lbl := Label.new()
+	title_lbl.text = "布局验证未通过"
+	title_lbl.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
+	title_lbl.add_theme_font_size_override("font_size", 16)
+	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title_lbl)
+	
+	var msg_lbl := Label.new()
+	msg_lbl.text = message
+	msg_lbl.add_theme_font_size_override("font_size", 14)
+	msg_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	msg_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(msg_lbl)
+	
+	var btn := Button.new()
+	btn.text = "确定"
+	btn.custom_minimum_size = Vector2(100, 30)
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	btn.pressed.connect(func(): backdrop.queue_free())
+	vbox.add_child(btn)
 
 func _on_reset_pressed():
 	if _current_step == 1:
@@ -1384,11 +1498,11 @@ func _load_preset(preset_name: String):
 			m.cached_bargain_target = ""
 			
 	GameManager.turn_count = 0
-	GameManager.mastermind_intel = 0.0
 	GameManager.current_encounter.clear()
 	GameManager.encounter_queue.clear()
 	GameManager.prison_queue.clear()
 	GameManager.history_stack.clear()
+	GameManager.safehouse_100_turns.clear()
 	for div in GameManager.ALL_DIVISIONS:
 		GameManager.intelligence[div] = 0.0
 		GameManager.intelligence_changed.emit(div, 0.0)

@@ -1,6 +1,6 @@
 [gd_scene format=3 uid="uid://rjmrpsht35fv"]
 
-[ext_resource type="Texture2D" uid="uid://bttgnb4wtxj7a" path="res://辛迪加素材/背景.png" id="1_wtcfe"]
+[ext_resource type="Texture2D" uid="uid://bttgnb4wtxj7a" path="res://辛迪加素材/界面UI/背景.png" id="1_wtcfe"]
 [ext_resource type="Script" uid="uid://c0yh0umayg3rf" path="res://scripts/main.gd" id="2_main"]
 
 [node name="Node2D" type="Node2D" unique_id=374323487]

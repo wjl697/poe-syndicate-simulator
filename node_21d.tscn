@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://ct47plkwqqide"]
 
-[ext_resource type="Texture2D" uid="uid://d18whis0bl5ps" path="res://辛迪加素材/进度条背板.png" id="1_lthf0"]
-[ext_resource type="Texture2D" uid="uid://c8y1jcxajyi5a" path="res://辛迪加素材/进度条黄色.png" id="2_b3wpp"]
-[ext_resource type="Texture2D" uid="uid://b6hbw1exx2vcu" path="res://辛迪加素材/进度条.png" id="3_4fy5d"]
+[ext_resource type="Texture2D" uid="uid://d18whis0bl5ps" path="res://辛迪加素材/界面UI/进度条背板.png" id="1_lthf0"]
+[ext_resource type="Texture2D" uid="uid://c8y1jcxajyi5a" path="res://辛迪加素材/界面UI/进度条黄色.png" id="2_b3wpp"]
+[ext_resource type="Texture2D" uid="uid://b6hbw1exx2vcu" path="res://辛迪加素材/界面UI/进度条.png" id="3_4fy5d"]
 
 [node name="Node2D" type="Node2D" unique_id=1624882093]
 

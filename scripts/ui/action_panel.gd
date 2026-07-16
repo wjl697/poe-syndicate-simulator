@@ -82,7 +82,7 @@ func show_actions(member_name: String, actions: Array):
 		child.queue_free()
 
 	# Preload button texture for reuse
-	var btn_tex := preload("res://辛迪加素材/按钮.png")
+	var btn_tex := preload("res://辛迪加素材/界面UI/按钮.png")
 
 	# 创建操作按钮
 	for action in actions:

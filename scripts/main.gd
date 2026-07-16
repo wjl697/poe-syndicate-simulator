@@ -15,7 +15,6 @@ var _turn_label: Label
 var _info_label: Label
 var _queue_label: Label           # 遭遇队列剩余提示
 var _safehouse_buttons: Dictionary = {}  # Division -> Button
-var _mastermind_btn: Button
 var _reset_btn: Button
 var _undo_btn: Button
 var _sandbox_wizard: Control = null
@@ -133,14 +132,6 @@ func _build_ui_layer():
 		_safehouse_buttons[div] = btn
 		div_index += 1
 
-	# 主脑战斗按钮
-	_mastermind_btn = _make_button("⚔ 挑战主脑", Vector2(-200, -80 - 4 * 50), Color(0.6, 0.1, 0.1))
-	_mastermind_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_mastermind_btn.custom_minimum_size = Vector2(170, 44)
-	_mastermind_btn.visible = false
-	_mastermind_btn.pressed.connect(_on_mastermind_pressed)
-	hud.add_child(_mastermind_btn)
-
 	# 重置游戏按钮 — 右上
 	_reset_btn = _make_button("↺ 重置游戏", Vector2(-180, 50), Color(0.4, 0.2, 0.2))
 	_reset_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
@@ -175,7 +166,6 @@ func _connect_manager_signals():
 	GameManager.encounter_queue_advanced.connect(_on_queue_updated)
 	GameManager.action_executed.connect(_on_action_result)
 	GameManager.safehouse_ready.connect(_on_safehouse_ready)
-	GameManager.mastermind_ready.connect(_on_mastermind_ready)
 	GameManager.intelligence_changed.connect(_on_intel_changed_check)
 	GameManager.state_restored.connect(_on_state_restored)
 
@@ -358,30 +348,18 @@ func _on_queue_updated(remaining: int):
 
 func _on_safehouse_ready(div: int):
 	if _safehouse_buttons.has(div):
-		_safehouse_buttons[div].visible = true
+		_safehouse_buttons[div].visible = false
 	_info_label.text = GameManager.DIVISION_NAMES.get(div, "") + " 藏身处可突袭！"
-
-func _on_mastermind_ready():
-	_mastermind_btn.visible = true
-	_info_label.text = "主脑可挑战！"
 
 func _on_intel_changed_check(div: int, value: float):
 	if _safehouse_buttons.has(div):
-		if value >= 1.0:
-			_safehouse_buttons[div].visible = true
-		else:
-			_safehouse_buttons[div].visible = false
+		_safehouse_buttons[div].visible = false
 
 func _on_raid_pressed(div: int):
 	GameManager.raid_safehouse(div)
 	if _safehouse_buttons.has(div):
 		_safehouse_buttons[div].visible = false
 	_info_label.text = GameManager.DIVISION_NAMES.get(div, "") + " 藏身处已突袭！"
-
-func _on_mastermind_pressed():
-	GameManager.fight_mastermind()
-	_mastermind_btn.visible = false
-	_info_label.text = "击败了主脑卡塔莉娜！"
 
 func _on_reset_pressed():
 	if _sandbox_wizard != null and is_instance_valid(_sandbox_wizard):
@@ -396,7 +374,6 @@ func _on_reset_pressed():
 	_board.clear_highlights()
 	for div in _safehouse_buttons:
 		_safehouse_buttons[div].visible = false
-	_mastermind_btn.visible = false
 	_queue_label.text = ""
 
 	# 移除旧 Board 并重建
@@ -418,14 +395,9 @@ func _on_state_restored():
 	_turn_label.text = "回合: " + str(GameManager.turn_count)
 	_card_overlay.dismiss()
 	
-	_mastermind_btn.visible = GameManager.mastermind_intel >= 1.0
-	
-	# 恢复各部门藏身处按钮可见性
+	# 恢复各部门藏身处按钮可见性 (卡牌下方已集成，此处HUD保持隐藏)
 	for div in _safehouse_buttons:
-		if GameManager.intelligence.has(div):
-			_safehouse_buttons[div].visible = GameManager.intelligence[div] >= 1.0
-		else:
-			_safehouse_buttons[div].visible = false
+		_safehouse_buttons[div].visible = false
 			
 	_board.clear_highlights()
 	_update_ui_state()
@@ -594,7 +566,6 @@ func _refresh_ui_after_sandbox_activation():
 	# 隐藏突袭和挑战主脑按钮
 	for div in _safehouse_buttons:
 		_safehouse_buttons[div].visible = false
-	_mastermind_btn.visible = false
 	
 	# 重设提示文本
 	_queue_label.text = ""

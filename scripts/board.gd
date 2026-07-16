@@ -77,9 +77,9 @@ var _badges: Dictionary = {}          # Division -> Sprite2D
 var _mastermind_card: Sprite2D
 var _mastermind_container: Node2D
 
-var _tex_mastermind_badge := preload("res://辛迪加素材/主脑标志.png")
-var _tex_bg := preload("res://辛迪加素材/人物背景.png")
-var _tex_mastermind_halo := preload("res://辛迪加素材/主脑光晕.png")
+var _tex_mastermind_badge := preload("res://辛迪加素材/界面UI/主脑标志.png")
+var _tex_bg := preload("res://辛迪加素材/界面UI/人物背景.png")
+var _tex_mastermind_halo := preload("res://辛迪加素材/界面UI/主脑光晕.png")
 
 func _ready():
 	add_to_group("board")

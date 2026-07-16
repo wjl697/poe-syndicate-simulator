@@ -13,9 +13,9 @@ var preview_start_member: String = ""
 var preview_target_pos: Vector2 = Vector2.ZERO
 var preview_relation_type: int = -1
 
-var _tex_yellow := preload("res://辛迪加素材/黄色连线.png")
-var _tex_green := preload("res://辛迪加素材/绿色连线.png")
-var _tex_red   := preload("res://辛迪加素材/红色连线.png")
+var _tex_yellow := preload("res://辛迪加素材/界面UI/黄色连线.png")
+var _tex_green := preload("res://辛迪加素材/界面UI/绿色连线.png")
+var _tex_red   := preload("res://辛迪加素材/界面UI/红色连线.png")
 
 var _atlas_yellow: AtlasTexture
 var _atlas_green: AtlasTexture

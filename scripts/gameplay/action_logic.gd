@@ -321,10 +321,12 @@ static func _do_interrogate(gm, m, result: Dictionary):
 	m.prison_turns_left = gm.PRISON_DURATION
 	m.prison_rank_snapshot = clampi(m.rank, 0, 3)
 	m.prison_intel_per_turn_points = gm._get_prison_intel_points_by_rank(m.prison_rank_snapshot)
+	# 审讯时将情报贡献去向部门设定为当前遭遇战所在的部门
+	m.prison_intel_division = gm.current_encounter.get("division", gm.Division.NONE)
 	gm.prison_queue.append(m.member_name)
 
 	result.effects.append(m.member_name + " 入狱 " + str(gm.PRISON_DURATION) + " 次遭遇")
-	var intel_div: int = gm._resolve_intel_division_for_member(m)
+	var intel_div: int = m.prison_intel_division
 	if intel_div != gm.Division.NONE:
 		result.effects.append("每回合为 " + gm.DIVISION_NAMES.get(intel_div, "") + " 提供 " + str(m.prison_intel_per_turn_points) + " 点情报")
 	gm.member_imprisoned.emit(m.member_name)
@@ -334,88 +336,10 @@ static func _leader_step_down(gm, m, result: Dictionary):
 	m.is_leader = false
 	result.effects.append(m.member_name + " 从 " + gm.DIVISION_NAMES.get(div, "") + " 首领下台")
 
-	# 优先从部门下属中按等级最高提拔
-	var candidates: Array = gm.get_division_members(div)
-	var valid: Array = []
-	for c in candidates:
-		if c.member_name != m.member_name and not c.is_imprisoned:
-			valid.append(c)
-
-	if not valid.is_empty():
-		valid.sort_custom(func(a, b): return a.rank > b.rank)
-		var promoted = valid[0]
-		promoted.is_leader = true
-		result.effects.append(promoted.member_name + " 按军衔顺位被提拔为 " + gm.DIVISION_NAMES.get(div, "") + " 新首领")
-		return
-
-	# 部门内无下属时，优先随机招募自由人充当首领
-	var free_members: Array = gm.get_unassigned_members()
-	var free_valid: Array = []
-	for c in free_members:
-		if not c.is_imprisoned:
-			free_valid.append(c)
-	if not free_valid.is_empty():
-		var promoted = free_valid[randi() % free_valid.size()]
-		promoted.is_leader = true
-		promoted.division = div
-		promoted.rank = maxi(1, promoted.rank)
-		result.effects.append(promoted.member_name + " 从自由人中被提拔为 " + gm.DIVISION_NAMES.get(div, "") + " 新首领")
-		return
-
-	# 无自由人可用时，从其他部门随机调任1人担任首领，星级重置为1
-	var transfer_pool: Array = []
-	var transfer_leader_pool: Array = []
-	for mname in gm.members:
-		var candidate = gm.members[mname]
-		if not candidate.is_on_board or candidate.is_imprisoned:
-			continue
-		if candidate.division == gm.Division.NONE or candidate.division == div:
-			continue
-		if candidate.is_leader:
-			transfer_leader_pool.append(candidate)
-		else:
-			transfer_pool.append(candidate)
-
-	var promoted = null
-	var promoted_from_div: int = gm.Division.NONE
-	var promoted_was_leader := false
-	if not transfer_pool.is_empty():
-		promoted = transfer_pool[randi() % transfer_pool.size()]
-	elif not transfer_leader_pool.is_empty():
-		promoted = transfer_leader_pool[randi() % transfer_leader_pool.size()]
-		promoted_was_leader = true
-
-	if promoted:
-		promoted_from_div = promoted.division
-		promoted.division = div
-		promoted.is_leader = true
-		promoted.rank = 1
-		result.effects.append(
-			promoted.member_name + " 从 " + gm.DIVISION_NAMES.get(promoted_from_div, "") +
-			" 调任为 " + gm.DIVISION_NAMES.get(div, "") + " 新首领（原部门星级作废，重置为1星）"
-		)
-		if promoted_was_leader:
-			_promote_replacement_leader(gm, promoted_from_div, promoted.member_name, result)
-	else:
-		result.effects.append(gm.DIVISION_NAMES.get(div, "") + " 暂无可提拔人员，首领空缺")
-
-static func _promote_replacement_leader(gm, div: int, excluded_name: String, result: Dictionary):
-	var candidates: Array = gm.get_division_members(div)
-	var valid: Array = []
-	for c in candidates:
-		if c.member_name == excluded_name:
-			continue
-		if c.is_imprisoned:
-			continue
-		valid.append(c)
-	if valid.is_empty():
-		result.effects.append(gm.DIVISION_NAMES.get(div, "") + " 因首领被调任，暂时首领空缺")
-		return
-
-	valid.sort_custom(func(a, b): return a.rank > b.rank)
-	var promoted = valid[0]
-	promoted.is_leader = true
-	result.effects.append(promoted.member_name + " 按军衔顺位被提拔为 " + gm.DIVISION_NAMES.get(div, "") + " 新首领")
+	var promo_msg = gm._promote_new_leader(div)
+	if promo_msg != "":
+		for msg in promo_msg.split(" | "):
+			result.effects.append(msg)
 
 static func _force_release_oldest_prisoner(gm, result: Dictionary):
 	if gm.prison_queue.is_empty(): return

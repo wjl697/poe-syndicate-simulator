@@ -1303,23 +1303,98 @@ func _show_card_editor_overlay(mname: String, screen_pos: Vector2) -> void:
 	info_lbl.position = card_bg_sprite.position + Vector2(-bg_size_scaled.x * 0.4, bg_size_scaled.y * 0.2 + 30)
 	backdrop.add_child(info_lbl)
 	
-	# 7. 释放按钮：X轴居中，Y轴对齐到背板边缘低处 (一比一复制正常模式)
-	var release_btn := Button.new()
-	release_btn.text = "释放"
-	release_btn.custom_minimum_size = Vector2(110, 30)
-	release_btn.position = center + Vector2(-55, 95)
-	_style_action_button(release_btn)
-	backdrop.add_child(release_btn)
-	
-	release_btn.pressed.connect(func():
-		m.is_imprisoned = false
-		m.prison_turns_left = 0
-		if mname in GameManager.prison_queue:
-			GameManager.prison_queue.erase(mname)
-		GameManager.board_changed.emit()
-		_active_editor_overlay = null
-		backdrop.queue_free()
-	)
+	# 7. 动态渲染中央底部控制区域：
+	# A. 若该成员目前正在【关押】中，显示【释放】按钮
+	if m.is_imprisoned:
+		var release_btn := Button.new()
+		release_btn.text = "释放"
+		release_btn.custom_minimum_size = Vector2(110, 30)
+		release_btn.position = center + Vector2(-55, 95)
+		_style_action_button(release_btn)
+		backdrop.add_child(release_btn)
+		
+		release_btn.pressed.connect(func():
+			m.is_imprisoned = false
+			m.prison_turns_left = 0
+			if mname in GameManager.prison_queue:
+				GameManager.prison_queue.erase(mname)
+			GameManager.board_changed.emit()
+			_active_editor_overlay = null
+			backdrop.queue_free()
+		)
+	# B. 若非关押状态且为首领，显示安全屋情报进度条及鼠标按住滑动/拖拽功能
+	elif m.is_leader and m.division != GameManager.Division.NONE:
+		var current_ratio: float = GameManager.intelligence.get(m.division, 0.0)
+		var current_pts: int = GameManager._to_intel_points(current_ratio)
+		
+		var pb_scale := 1.1 * auto_scale_f
+		var offset_x := 8.0 * auto_scale_f
+		
+		var pb_container := Control.new()
+		pb_container.position = center + Vector2(0, 88)
+		backdrop.add_child(pb_container)
+		
+		# 进度条背板
+		var pb_bg := Sprite2D.new()
+		pb_bg.texture = preload("res://辛迪加素材/界面UI/进度条背板.png")
+		pb_bg.scale = Vector2(pb_scale, pb_scale)
+		pb_bg.position = Vector2(offset_x, 0)
+		pb_container.add_child(pb_bg)
+		
+		# 填充条
+		var pb_bar := TextureProgressBar.new()
+		pb_bar.texture_under = preload("res://辛迪加素材/界面UI/进度条.png")
+		pb_bar.texture_progress = preload("res://辛迪加素材/界面UI/进度条黄色.png")
+		var pb_native_size = pb_bar.texture_under.get_size()
+		pb_bar.size = pb_native_size
+		pb_bar.pivot_offset = pb_native_size * 0.5
+		pb_bar.scale = Vector2(pb_scale, pb_scale)
+		pb_bar.position = Vector2(offset_x, -10.0 * pb_scale) - pb_native_size * 0.5
+		pb_bar.texture_progress_offset = Vector2(0.0, 15.0)
+		pb_bar.max_value = 100
+		pb_bar.value = current_pts
+		pb_container.add_child(pb_bar)
+		
+		# 提示文字 Label
+		var intel_lbl := Label.new()
+		intel_lbl.text = "情报: " + str(current_pts) + "/100"
+		intel_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		intel_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		intel_lbl.add_theme_font_size_override("font_size", 11)
+		intel_lbl.add_theme_color_override("font_color", Color(1.0, 0.9, 0.6))
+		intel_lbl.size = Vector2(140, 20)
+		intel_lbl.position = Vector2(-70 + offset_x, -22)
+		pb_container.add_child(intel_lbl)
+
+		# 鼠标拖拽/点击透明交互区域 (支持按住鼠标左键滑动)
+		var drag_w := 140.0 * auto_scale_f * 2.2
+		var drag_area := Control.new()
+		drag_area.custom_minimum_size = Vector2(drag_w, 24)
+		drag_area.size = Vector2(drag_w, 24)
+		drag_area.position = Vector2(-drag_w * 0.5 + offset_x, -12)
+		drag_area.mouse_filter = Control.MOUSE_FILTER_STOP
+		pb_container.add_child(drag_area)
+		
+		var is_dragging := false
+		var update_intel_from_x = func(global_x: float):
+			var rect = drag_area.get_global_rect()
+			var ratio = clampf((global_x - rect.position.x) / rect.size.x, 0.0, 1.0)
+			var pts = int(round(ratio * 100.0))
+			pb_bar.value = pts
+			intel_lbl.text = "情报: " + str(pts) + "/100"
+			GameManager.intelligence[m.division] = ratio
+			GameManager.intelligence_changed.emit(m.division, ratio)
+
+		drag_area.gui_input.connect(func(ev: InputEvent):
+			if ev is InputEventMouseButton:
+				if ev.button_index == MOUSE_BUTTON_LEFT:
+					is_dragging = ev.pressed
+					if is_dragging:
+						update_intel_from_x.call(ev.global_position.x)
+			elif ev is InputEventMouseMotion:
+				if is_dragging or (ev.button_mask & MOUSE_BUTTON_MASK_LEFT) != 0:
+					update_intel_from_x.call(ev.global_position.x)
+		)
 	
 	# --- 临时选择状态 ---
 	var selection = {
@@ -1640,8 +1715,7 @@ func _on_preset_selected(idx: int):
 	_active_preset_name = key
 	_presets_dict["active_preset"] = key
 	_save_presets_to_file()
-	if _current_step > 1:
-		_load_preset(_active_preset_name)
+	_load_preset(_active_preset_name)
 
 func _on_save_preset_pressed():
 	if _active_preset_name != "":
@@ -1818,7 +1892,7 @@ func _show_presets_management_popup():
 				GameManager.relationships.clear()
 				GameManager.board_changed.emit()
 				_rebuild_step1_grid()
-				_layout_benched_cards()
+				_sync_benched_card_nodes()
 				_rebuild_step2_dock()
 			else:
 				_active_preset_name = keys[0]
@@ -2071,7 +2145,7 @@ func _load_preset(preset_name: String):
 	
 	# 重建UI状态
 	_rebuild_step1_grid()
-	_layout_benched_cards()
+	_sync_benched_card_nodes()
 	_rebuild_step2_dock()
 
 func _auto_fill_placements(preset: Dictionary):

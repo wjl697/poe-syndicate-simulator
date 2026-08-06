@@ -686,93 +686,181 @@ func _generate_single_encounter(div: int, used_members: Dictionary = {}) -> Dict
 	var primary_name: String = enc_members[0].member_name
 	print("[DEBUG 遭遇] 部门: ", GameManager.DIVISION_NAMES.get(div, str(div)), " | 主成员: ", primary_name, " (div=", enc_members[0].division, ")")
 
-	# --- 2. 增援：同部门成员（极高概率） ---
-	var same_dept_candidates: Array = []
+	# ====== 新的 PoE 加权抽样 + 槽位触发逻辑（微信拉群邀请模型） ======
+
+	# 1. 检查全局遭遇锁定（只读锁定）
+	var is_locked := false
+	if not current_encounter.is_empty():
+		for m in current_encounter.get("members", []):
+			if m.member_name not in current_encounter.get("processed", []):
+				is_locked = true
+				break
+	if is_locked:
+		print("[遭遇生成] 检测到前场未决遭遇锁定，强制退化为单人遭遇战")
+		return {
+			"division": div,
+			"members": enc_members,
+			"processed": []
+		}
+
+	# 2. 检查首领是否合规
+	var leader: MemberState = null
 	for mname in members:
-		if mname in used_members:
-			continue
 		var m: MemberState = members[mname]
-		if m.member_name == primary_name:
-			continue
-		if m.is_leader and has_unrevealed:
-			continue
-		if m.division == div and m.is_on_board and not m.is_imprisoned:
-			same_dept_candidates.append(m)
-			
-	same_dept_candidates.shuffle()
-	for m in same_dept_candidates:
-		if enc_members.size() >= MAX_ENCOUNTER_MEMBERS:
+		if m.division == div and m.is_leader:
+			leader = m
 			break
-		if randf() < 0.85:  # 同部门极高概率
-			enc_members.append(m)
-			print("[DEBUG 遭遇]   +同部门增援: ", m.member_name, " (div=", m.division, ")")
 
-	# --- 3. 增援：关系链（信任/宿敌） ---
-	var relation_candidates: Array = []
-	for rel in get_relationships_for(primary_name):
-		var other_name: String = rel.member_b if rel.member_a == primary_name else rel.member_a
-		var other: MemberState = members.get(other_name)
-		if other == null or not other.is_on_board or other.is_imprisoned:
-			continue
-		# 开启安全屋的部门成员不会支援其他部门的遭遇战
-		if other.division != Division.NONE and intelligence.get(other.division, 0.0) >= 1.0:
-			continue
-		# 已在列表中跳过
-		var already := false
-		for em in enc_members:
-			if em.member_name == other_name:
-				already = true
-				break
-		if already:
-			continue
-		relation_candidates.append({"member": other, "type": rel.type})
+	var leader_eligible := false
+	if leader != null and not leader.is_imprisoned and leader.is_on_board and not leader.member_name in used_members:
+		if not has_unrevealed:
+			var has_rel = get_relationship_between(primary_name, leader.member_name) != null
+			var total_ranks := 0
+			for check_mname in members:
+				var check_m: MemberState = members[check_mname]
+				if check_m.division == div and check_m.is_on_board and not check_m.is_imprisoned:
+					total_ranks += check_m.rank
+			if has_rel or total_ranks >= 3:
+				leader_eligible = true
 
-	# 按关系增援
-	relation_candidates.shuffle()
-	for candidate in relation_candidates:
-		if enc_members.size() >= MAX_ENCOUNTER_MEMBERS:
+	# 3. 首领第一通道（VIP 判定）
+	var leader_deployed_via_vip := false
+	if leader_eligible:
+		var base_leader_vip_rate := 0.05
+		var more_leader_modifier := 2.0  # 对应 100% 增加几率天赋
+		var final_leader_vip_rate = base_leader_vip_rate * more_leader_modifier
+		if randf() <= final_leader_vip_rate:
+			enc_members.append(leader)
+			used_members[leader.member_name] = true
+			leader_deployed_via_vip = true
+			print("[遭遇生成] 首领 VIP 通道判定成功，加入 Slot 2: ", leader.member_name)
+
+	# 4. 循环填充 3 个槽位
+	var base_slot_rates = [0.35, 0.25, 0.15]
+	var increased_reinforcement_chance := 0.15 + 0.50  # 天赋 15% + 圣甲虫 50%
+	var dept_member_count = get_division_slot_count(div)
+
+	for slot_idx in range(3):
+		if enc_members.size() >= 4:
 			break
-		if candidate.member.member_name in used_members:
-			continue
-			
-		if candidate.member.is_leader and has_unrevealed:
-			continue
-			
-		var prob: float
-		if candidate.type == RelationType.TRUST:
-			prob = 0.50  # 盟友中等概率 50%
-		else:
-			prob = 0.50  # 死敌中等概率 50%
-		if randf() < prob:
-			enc_members.append(candidate.member)
-			print("[DEBUG 遭遇]   +关系增援: ", candidate.member.member_name, " (div=", candidate.member.division, ", rel_type=", candidate.type, ")")
 
-	# --- 4. 增援：自由人（中等概率） ---
-	# 如果部门未满员且遭遇战还有空位，自由人（无部门）有概率加入遭遇，从而试图加入该部门
-	if get_division_slot_count(div) < MAX_MEMBERS_PER_DIVISION:
-		var free_agents: Array = []
+		# 计算关系链 Proc 修正系数 (只检查候选池与主控成员 A 的关系)
+		var max_rel_factor := 1.0
 		for mname in members:
-			var m: MemberState = members[mname]
-			if m.division == Division.NONE and m.is_on_board and not m.is_imprisoned:
-				free_agents.append(m)
-				
-		free_agents.shuffle()
-		for m in free_agents:
-			if enc_members.size() >= MAX_ENCOUNTER_MEMBERS:
-				break
-			if m.member_name in used_members:
+			if mname == primary_name or mname in used_members:
 				continue
-			
-			# 确保未加入
-			var already := false
+			var already_added := false
 			for em in enc_members:
-				if em.member_name == m.member_name:
-					already = true
+				if em.member_name == mname:
+					already_added = true
 					break
-			
-			if not already and randf() < 0.35:  # 给予自由人 35% 的概率加入遭遇战
-				enc_members.append(m)
-				print("[DEBUG 遭遇]   +自由人乱入: ", m.member_name, " (div=", m.division, ")")
+			if already_added:
+				continue
+
+			var m: MemberState = members[mname]
+			if not m.is_on_board or m.is_imprisoned:
+				continue
+
+			var rel = get_relationship_between(primary_name, mname)
+			if rel != null:
+				if rel.type == RelationType.RIVALRY:
+					max_rel_factor = maxf(max_rel_factor, 3.0)
+				elif rel.type == RelationType.TRUST:
+					max_rel_factor = maxf(max_rel_factor, 2.0)
+
+		var base_rate = base_slot_rates[slot_idx]
+		var final_rate = base_rate * (1.0 + increased_reinforcement_chance) * max_rel_factor
+
+		# 掷骰判定槽位是否激活
+		if randf() > final_rate:
+			print("[遭遇生成] 增援槽位 ", slot_idx + 1, " 判定失败（概率为 ", final_rate, "），触发 Early Stop 终止后续生成")
+			break
+
+		# 动态构建可用候选人池并计算权重
+		var candidates = []
+		var weights = []
+		var total_weight := 0.0
+
+		for mname in members:
+			if mname == primary_name or mname in used_members:
+				continue
+			var already_added := false
+			for em in enc_members:
+				if em.member_name == mname:
+					already_added = true
+					break
+			if already_added:
+				continue
+
+			var m: MemberState = members[mname]
+			if not m.is_on_board or m.is_imprisoned:
+				continue
+
+			# 开启安全屋的部门成员不支援其他部门遭遇战
+			if m.division != Division.NONE and m.division != div and intelligence.get(m.division, 0.0) >= 1.0:
+				continue
+
+			# 首领特殊过滤
+			if m.is_leader and m.division == div:
+				if not leader_eligible:
+					continue
+				if leader_deployed_via_vip:
+					continue
+
+			# 跨部门中立者屏蔽
+			var rel = get_relationship_between(primary_name, mname)
+			if m.division != Division.NONE and m.division != div and rel == null:
+				continue
+
+			# 游民满员阻断
+			if m.division == Division.NONE and dept_member_count >= MAX_MEMBERS_PER_DIVISION and rel == null:
+				continue
+
+			# 计算权重数值
+			var weight := 0.0
+			if rel != null:
+				# VIP 关系户：宿敌与信任权重完全一致（30票）
+				weight = 30.0
+				if m.is_leader and m.division == div:
+					# 首领 + 关系 + 天赋相伴几率倍增 100% = 60票
+					weight = 60.0
+			else:
+				if m.division == div:
+					if m.is_leader:
+						# 首领 + 无关系 + 天赋相伴几率倍增 100% = 12票
+						weight = 12.0
+					else:
+						# 同僚 + 无关系 = 4票
+						weight = 4.0
+				elif m.division == Division.NONE:
+					# 自由人 + 无关系 = 1票
+					weight = 1.0
+
+			if weight > 0.0:
+				candidates.append(m)
+				weights.append(weight)
+				total_weight += weight
+
+		# 候选池为空判定
+		if candidates.is_empty():
+			print("[遭遇生成] 增援槽位 ", slot_idx + 1, " 构建候选池为空，触发 Early Stop")
+			break
+
+		# 轮盘抽样
+		var r = randf() * total_weight
+		var current_sum := 0.0
+		var selected_idx := -1
+		for idx in range(candidates.size()):
+			current_sum += weights[idx]
+			if r <= current_sum:
+				selected_idx = idx
+				break
+
+		if selected_idx != -1:
+			var selected = candidates[selected_idx]
+			enc_members.append(selected)
+			used_members[selected.member_name] = true
+			print("[遭遇生成] 增援槽位 ", slot_idx + 1, " 抽中: ", selected.member_name, " (权重=", weights[selected_idx], ")")
 
 	return {
 		"division": div,
@@ -833,15 +921,13 @@ func _validate_encounter(enc: Dictionary) -> void:
 	enc.members = valid_members
 
 func _check_and_release_imprisoned_subordinates_for_encounter(enc: Dictionary) -> void:
-	if enc.is_empty() or not enc.has("division"):
+	if enc.is_empty() or not enc.has("members"):
 		return
-	var div = int(enc.division)
 	
-	# 查找该部门在押的下属并提前释放（延迟执行降星惩罚）
-	for mname in members:
-		var m: MemberState = members[mname]
-		if m.division == div and not m.is_leader and m.is_imprisoned and m.is_on_board:
-			print("[提前释放] 开启了 ", DIVISION_NAMES.get(div, ""), " 遭遇战，在押成员 ", m.member_name, " 提前被释放（延迟结算降星）！")
+	# 只释放真正参与本场遭遇战（且目前处于在押状态）的成员
+	for m in enc.get("members", []):
+		if m.is_imprisoned:
+			print("[提前释放] 开启遭遇战，参与遭遇的在押成员 ", m.member_name, " 提前被释放（延迟结算降星）！")
 			_release_imprisoned_member(m, false) # 延迟扣星
 			m.has_pending_prison_penalty = true
 
@@ -971,6 +1057,20 @@ func execute_action(member_name: String, action: int):
 			" | imprisoned=", m_after.is_imprisoned)
 
 	action_executed.emit(result)
+	board_changed.emit()
+	_check_encounter_end()
+	save_game_to_disk()
+
+func release_all_current_encounter():
+	if current_encounter.is_empty():
+		return
+	save_state()
+	var remaining: Array = _get_remaining_encounter_members()
+	for m in remaining:
+		var result: Dictionary = ActionLogic.execute_action(self, m.member_name, ActionType.RELEASE)
+		current_encounter.get("processed", []).append(m.member_name)
+		action_executed.emit(result)
+	ActionLogic.refresh_action_caches(self)
 	board_changed.emit()
 	_check_encounter_end()
 	save_game_to_disk()

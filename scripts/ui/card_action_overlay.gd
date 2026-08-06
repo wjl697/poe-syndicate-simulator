@@ -399,7 +399,10 @@ func _create_sandbox_effects_panel(action: int, pos: Vector2, w: float, h: float
 			btn.modulate = Color(0.5, 0.5, 0.5, 0.6)
 			
 		btn.mouse_entered.connect(func():
-			desc_label.text = eff.description
+			if eff.is_valid:
+				desc_label.text = eff.description
+			else:
+				desc_label.text = ""
 		)
 		
 		var eff_id: int = eff.id

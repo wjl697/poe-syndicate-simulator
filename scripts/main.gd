@@ -23,6 +23,7 @@ var _sandbox_wizard: Control = null
 var _current_encounter_member: String = ""
 var _showing_result: bool = false
 var _finish_enc_btn: Button        # 接替 EncounterPanel 的流程控制按钮
+var _release_all_btn: Button       # 全部释放按钮（位于下一个部门按钮上方）
 var _hover_timer: SceneTreeTimer = null
 var _pending_hover_member: String = ""
 
@@ -152,6 +153,13 @@ func _build_ui_layer():
 	hud.add_child(_card_overlay)
 
 	# --- 流程控制按钮 (替代旧版面板上的按钮) ---
+	_release_all_btn = _make_button("🕊 全部释放", Vector2(-200, -135), Color(0.3, 0.3, 0.35))
+	_release_all_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_release_all_btn.custom_minimum_size = Vector2(170, 44)
+	_release_all_btn.visible = false
+	_release_all_btn.pressed.connect(_on_release_all_pressed)
+	hud.add_child(_release_all_btn)
+
 	_finish_enc_btn = _make_button("➡ 处理下一波", Vector2(-200, -80), Color(0.1, 0.5, 0.2))
 	_finish_enc_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
 	_finish_enc_btn.custom_minimum_size = Vector2(170, 44)
@@ -298,15 +306,28 @@ func _on_action_result(result: Dictionary):
 		_card_overlay.dismiss()
 
 func _update_ui_state():
+	var is_in_sandbox_wizard := (_sandbox_wizard != null and is_instance_valid(_sandbox_wizard))
 	var in_encounter := not GameManager.current_encounter.is_empty() or not GameManager.encounter_queue.is_empty()
 	_encounter_btn.disabled = in_encounter
 	
+	# 全部释放按钮控制：仅在实际游戏遭遇战中（非沙盒向导布阵模式）且有未处理成员时显示
+	var has_unprocessed := not is_in_sandbox_wizard and not GameManager.current_encounter.is_empty() and GameManager._get_remaining_encounter_members().size() > 0
+	_release_all_btn.visible = has_unprocessed
+	
 	# 下一个部门按钮控制
-	if GameManager.current_encounter.is_empty() and not GameManager.encounter_queue.is_empty():
+	if not is_in_sandbox_wizard and GameManager.current_encounter.is_empty() and not GameManager.encounter_queue.is_empty():
 		_finish_enc_btn.text = "➡ 下一个部门"
 		_finish_enc_btn.visible = true
 	else:
 		_finish_enc_btn.visible = false
+
+func _on_release_all_pressed():
+	if _sandbox_wizard != null and is_instance_valid(_sandbox_wizard):
+		return
+	_card_overlay.dismiss()
+	_board.clear_highlights()
+	GameManager.release_all_current_encounter()
+	_update_ui_state()
 
 func _on_encounter_ended():
 	_board.clear_highlights()
@@ -554,8 +575,9 @@ func _start_sandbox_wizard():
 	_sandbox_wizard.closed.connect(_on_wizard_closed)
 	_ui_layer.add_child(_sandbox_wizard)
 
-	# 布阵导向期间，隐藏上方三个游戏按钮
+	# 布阵导向期间，隐藏上方三个游戏按钮与遭遇控制按钮
 	_set_top_buttons_visible(false)
+	_update_ui_state()
 
 	# 临时将按钮显示为“正在布阵...”
 	_sandbox_btn.text = "🛠 正在布阵..."

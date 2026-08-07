@@ -27,11 +27,11 @@ func _update_panel_layout():
 func _build_ui():
 	var vp_size := get_viewport_rect().size
 
-	# 1. 全屏开局背景图
+	# 1. 全屏开局背景图 (使用与游戏主面板完全一致的等比覆盖裁切模式 STRETCH_KEEP_ASPECT_COVERED)
 	var bg := TextureRect.new()
 	bg.texture = _tex_bg
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	bg.stretch_mode = TextureRect.STRETCH_SCALE
+	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.custom_minimum_size = vp_size
 	add_child(bg)

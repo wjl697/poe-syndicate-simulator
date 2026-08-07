@@ -13,8 +13,8 @@ config_version=5
 config/name="辛迪加"
 run/main_scene="res://node_2d.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
+boot_splash/show_image=false
 boot_splash/bg_color=Color(0, 0, 0, 1)
-boot_splash/image="res://辛迪加素材/界面UI/背景.png"
 config/icon="res://icon.svg"
 
 [autoload]

@@ -381,15 +381,15 @@ func update_display() -> void:
 			name_label.size = Vector2(bg_size.x * 0.8, 60)
 			name_label.add_theme_font_size_override("font_size", 48)
 			name_label.add_theme_color_override("font_color", Color(0, 0, 0))
-	# 入狱
+	# 审讯/在押状态标记（精准显示 剩余X回合 倒计时文本）
 	prison_icon.visible = member_data.is_imprisoned
 	if member_data.is_imprisoned:
 		modulate = Color.WHITE
-
 		prison_turn_badge.visible = true
 		prison_turn_label.visible = true
 		var remain_turns: int = maxi(member_data.prison_turns_left, 0)
-		prison_turn_label.text = "剩余" + str(remain_turns) + "回合"
+		var display_text := "剩余" + str(remain_turns) + "回合"
+		prison_turn_label.text = display_text
 
 		if _tex_prison_turn:
 			var tex_size: Vector2 = _tex_prison_turn.get_size()
@@ -402,7 +402,7 @@ func update_display() -> void:
 			prison_turn_badge.position = Vector2(round(PRISON_TURN_BADGE_OFFSET.x), round(badge_y))
 
 			var badge_size := tex_size * badge_scale
-			_layout_prison_turn_text(prison_turn_label.text, badge_size, badge_y)
+			_layout_prison_turn_text(display_text, badge_size, badge_y)
 	else:
 		modulate = Color.WHITE
 		prison_turn_badge.visible = false

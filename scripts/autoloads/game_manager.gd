@@ -1401,11 +1401,38 @@ func initialize_sandbox_mode(active_names: Array[String]):
 	
 	board_changed.emit()
 
-# ===== 磁盘持久化自动存取档系统 =====
-const SAVE_FILE_PATH = "user://game_save.json"
+# ===== 磁盘持久化模式独立存取档系统 =====
+var current_mode_id: String = ""
 
-func save_game_to_disk():
+func get_mode_save_path(mode_id: String = "") -> String:
+	var target := mode_id
+	if target.is_empty():
+		target = current_mode_id
+	match target:
+		"classic": return "user://save_classic.json"
+		"sandbox": return "user://save_sandbox.json"
+		"tutorial": return "user://save_tutorial.json"
+		_: return "user://game_save.json"
+
+func has_mode_save(mode_id: String) -> bool:
+	var path := get_mode_save_path(mode_id)
+	if FileAccess.file_exists(path):
+		return true
+	if mode_id == "classic" and FileAccess.file_exists("user://game_save.json"):
+		return true
+	return false
+
+func save_game_to_disk(mode_id: String = ""):
+	var target_mode := mode_id
+	if target_mode.is_empty():
+		target_mode = current_mode_id
+	if target_mode.is_empty():
+		return # 游戏启动未进入模式前，防止误保存覆盖现有存档
+
+	var save_path := get_mode_save_path(target_mode)
+
 	var save_data = {}
+	save_data["mode_id"] = target_mode
 	save_data["is_sandbox_mode"] = is_sandbox_mode
 	save_data["bench_pool"] = bench_pool
 	save_data["turn_count"] = turn_count
@@ -1455,17 +1482,26 @@ func save_game_to_disk():
 	# 监狱队列
 	save_data["prison_queue"] = prison_queue
 	
-	# 保存至本地磁盘
-	var file = FileAccess.open(SAVE_FILE_PATH, FileAccess.WRITE)
+	# 保存至对应模式存档文件
+	var file = FileAccess.open(save_path, FileAccess.WRITE)
 	if file:
 		file.store_string(JSON.stringify(save_data, "\t"))
-		print("【自动存档】游戏进度已成功保存到磁盘：" + SAVE_FILE_PATH)
+		print("【模式存档】[" + target_mode + "] 模式进度已成功保存到磁盘：" + save_path)
 
-func load_game_from_disk() -> bool:
-	if not FileAccess.file_exists(SAVE_FILE_PATH):
-		return false
+func load_game_from_disk(mode_id: String = "") -> bool:
+	var target_mode := mode_id
+	if target_mode.is_empty():
+		target_mode = current_mode_id
 		
-	var file = FileAccess.open(SAVE_FILE_PATH, FileAccess.READ)
+	var save_path := get_mode_save_path(target_mode)
+	if not FileAccess.file_exists(save_path):
+		# 如果模式独立存档不存在且为 classic，尝试兼容旧版 game_save.json
+		if target_mode == "classic" and FileAccess.file_exists("user://game_save.json"):
+			save_path = "user://game_save.json"
+		else:
+			return false
+		
+	var file = FileAccess.open(save_path, FileAccess.READ)
 	if not file:
 		return false
 		
@@ -1478,7 +1514,11 @@ func load_game_from_disk() -> bool:
 	if not data is Dictionary:
 		return false
 		
-	is_sandbox_mode = bool(data.get("is_sandbox_mode", false))
+	current_mode_id = target_mode
+	if target_mode == "sandbox":
+		is_sandbox_mode = true
+	else:
+		is_sandbox_mode = false
 	turn_count = int(data.get("turn_count", 0))
 	
 	# bench_pool
@@ -1504,7 +1544,6 @@ func load_game_from_disk() -> bool:
 		if members.has(k):
 			members[k].update_from_dict(members_data[k])
 		else:
-			# 以防万一如果有新卡，创建并装入
 			members[k] = MemberState.from_dict(members_data[k])
 		
 	# relationships
@@ -1547,14 +1586,15 @@ func load_game_from_disk() -> bool:
 	for mname in pq_data:
 		prison_queue.append(str(mname))
 		
-	# 清空并初始化历史撤销记录
+	# 清空历史撤销记录
 	history_stack.clear()
 	
 	board_changed.emit()
-	print("【自动读档】已从磁盘恢复游戏进度：" + SAVE_FILE_PATH)
+	print("【模式读档】已成功恢复[" + target_mode + "]模式进度：" + save_path)
 	return true
 
-func delete_save_file():
-	if FileAccess.file_exists(SAVE_FILE_PATH):
-		DirAccess.remove_absolute(SAVE_FILE_PATH)
-		print("【自动存档】存档文件已删除。")
+func delete_save_file(mode_id: String = ""):
+	var path := get_mode_save_path(mode_id)
+	if FileAccess.file_exists(path):
+		DirAccess.remove_absolute(path)
+		print("【模式存档】存档文件已删除：" + path)

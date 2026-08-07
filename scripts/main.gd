@@ -18,6 +18,8 @@ var _safehouse_buttons: Dictionary = {}  # Division -> Button
 var _reset_btn: Button
 var _undo_btn: Button
 var _sandbox_wizard: Control = null
+var _mode_selection_panel: Control = null
+var _mode_select_btn: Button
 
 # 状态
 var _current_encounter_member: String = ""
@@ -38,15 +40,9 @@ func _ready():
 	_connect_manager_signals()
 	_connect_board_signals()
 	Input.set_mouse_mode(Input.MOUSE_MODE_VISIBLE) 
-	
-	# 自动加载存档进度
-	var has_save = GameManager.load_game_from_disk()
-	if not has_save:
-		GameManager.initialize_game()
-	else:
-		_on_state_restored()
-		_on_queue_updated(GameManager.encounter_queue.size())
-		_update_sandbox_button_ui() 
+
+	# 项目启动时隐蔽底盘，展示模式选择界面
+	_show_mode_selection_panel()
 
 # ===== 构建面板（世界空间） =====
 func _build_board():
@@ -71,10 +67,11 @@ func _build_ui_layer():
 	hud.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_ui_layer.add_child(hud)
 
-	# 开始遭遇按钮 — 左上角
-	_encounter_btn = _make_button("⚔  开始遭遇", Vector2(20, 20), Color(0.15, 0.4, 0.7))
-	_encounter_btn.set_anchors_preset(Control.PRESET_TOP_LEFT)
-	_encounter_btn.custom_minimum_size = Vector2(180, 56)
+	# 开始遭遇按钮 — 右下角主行动按钮
+	_encounter_btn = _make_button("⚔  开始遭遇", Vector2(-225, -75), Color(0.15, 0.45, 0.8))
+	_encounter_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_encounter_btn.custom_minimum_size = Vector2(200, 52)
+	_encounter_btn.add_theme_font_size_override("font_size", 20)
 	_encounter_btn.pressed.connect(_on_encounter_pressed)
 	hud.add_child(_encounter_btn)
 
@@ -82,7 +79,7 @@ func _build_ui_layer():
 	_turn_label = Label.new()
 	_turn_label.text = "回合: 0"
 	_turn_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_turn_label.position = Vector2(-180, 16)
+	_turn_label.position = Vector2(-350, 16)
 	_turn_label.add_theme_font_size_override("font_size", 20)
 	_turn_label.add_theme_color_override("font_color", Color(0.9, 0.85, 0.6))
 	_turn_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
@@ -90,19 +87,12 @@ func _build_ui_layer():
 	_turn_label.add_theme_constant_override("shadow_offset_y", 2)
 	hud.add_child(_turn_label)
 
-	# 沙盒模式按钮 — 右上角（在回合标签左侧）
-	_sandbox_btn = _make_button("🛠 沙盒模式: 关", Vector2(-380, 16), Color(0.4, 0.4, 0.4))
-	_sandbox_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_sandbox_btn.custom_minimum_size = Vector2(160, 40)
-	_sandbox_btn.pressed.connect(_on_sandbox_pressed)
-	hud.add_child(_sandbox_btn)
-
-	# 教学模式按钮 — 右上角（在沙盒模式按钮左侧）
-	_tutorial_btn = _make_button("🎓 教学模式", Vector2(-550, 16), Color(0.2, 0.45, 0.45))
-	_tutorial_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_tutorial_btn.custom_minimum_size = Vector2(150, 40)
-	_tutorial_btn.pressed.connect(_on_tutorial_pressed)
-	hud.add_child(_tutorial_btn)
+	# 模式选择主菜单按钮 — 右上角唯一统一模式入口
+	_mode_select_btn = _make_button("🔀 模式选择", Vector2(-180, 16), Color(0.65, 0.45, 0.15))
+	_mode_select_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_mode_select_btn.custom_minimum_size = Vector2(160, 40)
+	_mode_select_btn.pressed.connect(_show_mode_selection_panel)
+	hud.add_child(_mode_select_btn)
 
 	# 状态信息 — 顶部中央
 	_info_label = Label.new()
@@ -132,12 +122,12 @@ func _build_ui_layer():
 	_queue_label.add_theme_constant_override("shadow_offset_y", 1)
 	hud.add_child(_queue_label)
 
-	# 藏身处突袭按钮 — 右下方，每个部门一个
+	# 藏身处突袭按钮 — 右下方（位于常规行动按钮上方）
 	var div_index := 0
 	for div in GameManager.ALL_DIVISIONS:
-		var btn := _make_button("突袭 " + GameManager.DIVISION_NAMES[div], Vector2(-200, -80 - div_index * 50), Color(0.5, 0.3, 0.1))
+		var btn := _make_button("突袭 " + GameManager.DIVISION_NAMES[div], Vector2(-225, -255 - div_index * 52), Color(0.5, 0.3, 0.1))
 		btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-		btn.custom_minimum_size = Vector2(170, 40)
+		btn.custom_minimum_size = Vector2(200, 44)
 		btn.visible = false
 		var div_copy := div
 		btn.pressed.connect(func(): _on_raid_pressed(div_copy))
@@ -145,17 +135,17 @@ func _build_ui_layer():
 		_safehouse_buttons[div] = btn
 		div_index += 1
 
-	# 重置游戏按钮 — 右上
-	_reset_btn = _make_button("↺ 重置游戏", Vector2(-180, 50), Color(0.4, 0.2, 0.2))
+	# 重置游戏按钮 — 右上（模式选择下方，等间距）
+	_reset_btn = _make_button("↺ 重置游戏", Vector2(-180, 66), Color(0.4, 0.2, 0.2))
 	_reset_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_reset_btn.custom_minimum_size = Vector2(140, 36)
+	_reset_btn.custom_minimum_size = Vector2(160, 40)
 	_reset_btn.pressed.connect(_on_reset_pressed)
 	hud.add_child(_reset_btn)
 
-	# 撤销操作按钮 — 重置下方
-	_undo_btn = _make_button("↩ 撤销操作", Vector2(-180, 100), Color(0.3, 0.4, 0.5))
+	# 撤销操作按钮 — 重置游戏下方（等间距）
+	_undo_btn = _make_button("↩ 撤销操作", Vector2(-180, 116), Color(0.3, 0.4, 0.5))
 	_undo_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	_undo_btn.custom_minimum_size = Vector2(140, 36)
+	_undo_btn.custom_minimum_size = Vector2(160, 40)
 	_undo_btn.pressed.connect(_on_undo_pressed)
 	hud.add_child(_undo_btn)
 
@@ -164,17 +154,17 @@ func _build_ui_layer():
 	_card_overlay.action_chosen.connect(_on_action_chosen)
 	hud.add_child(_card_overlay)
 
-	# --- 流程控制按钮 (替代旧版面板上的按钮) ---
-	_release_all_btn = _make_button("🕊 全部释放", Vector2(-200, -135), Color(0.3, 0.3, 0.35))
+	# --- 流程控制按钮 (右下角垂直堆叠，无重叠) ---
+	_release_all_btn = _make_button("🕊 全部释放", Vector2(-225, -195), Color(0.35, 0.35, 0.45))
 	_release_all_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_release_all_btn.custom_minimum_size = Vector2(170, 44)
+	_release_all_btn.custom_minimum_size = Vector2(200, 48)
 	_release_all_btn.visible = false
 	_release_all_btn.pressed.connect(_on_release_all_pressed)
 	hud.add_child(_release_all_btn)
 
-	_finish_enc_btn = _make_button("➡ 处理下一波", Vector2(-200, -80), Color(0.1, 0.5, 0.2))
+	_finish_enc_btn = _make_button("➡ 处理下一波", Vector2(-225, -135), Color(0.15, 0.55, 0.25))
 	_finish_enc_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_finish_enc_btn.custom_minimum_size = Vector2(170, 44)
+	_finish_enc_btn.custom_minimum_size = Vector2(200, 48)
 	_finish_enc_btn.visible = false
 	_finish_enc_btn.pressed.connect(_on_next_encounter)
 	hud.add_child(_finish_enc_btn)
@@ -323,21 +313,29 @@ func _on_action_result(result: Dictionary):
 
 func _update_ui_state():
 	var is_teaching := (_board != null and is_instance_valid(_board) and _board.is_teaching_whiteboard_mode)
-	if is_teaching:
+	var is_in_sandbox_wizard := (_sandbox_wizard != null and is_instance_valid(_sandbox_wizard))
+	
+	if is_teaching or is_in_sandbox_wizard:
 		if _encounter_btn: _encounter_btn.visible = false
 		if _reset_btn: _reset_btn.visible = false
 		if _undo_btn: _undo_btn.visible = false
 		if _release_all_btn: _release_all_btn.visible = false
 		if _finish_enc_btn: _finish_enc_btn.visible = false
+		if _info_label: _info_label.visible = false
+		if _queue_label: _queue_label.visible = false
+		if _turn_label: _turn_label.visible = false
+		if _mode_select_btn: _mode_select_btn.visible = false
 		for div in _safehouse_buttons:
 			if _safehouse_buttons[div]: _safehouse_buttons[div].visible = false
 		return
 		
 	if _encounter_btn: _encounter_btn.visible = true
-	if _reset_btn: _reset_btn.visible = true
+	if _reset_btn: _reset_btn.visible = not GameManager.is_sandbox_mode
 	if _undo_btn: _undo_btn.visible = true
-	
-	var is_in_sandbox_wizard := (_sandbox_wizard != null and is_instance_valid(_sandbox_wizard))
+	if _info_label: _info_label.visible = true
+	if _queue_label: _queue_label.visible = true
+	if _turn_label: _turn_label.visible = true
+	if _mode_select_btn: _mode_select_btn.visible = true
 	var in_encounter := not GameManager.current_encounter.is_empty() or not GameManager.encounter_queue.is_empty()
 	_encounter_btn.disabled = in_encounter
 	
@@ -422,6 +420,8 @@ func _on_raid_pressed(div: int):
 	_info_label.text = GameManager.DIVISION_NAMES.get(div, "") + " 藏身处已突袭！"
 
 func _close_teaching_mode():
+	if _board != null and is_instance_valid(_board) and _board.is_teaching_whiteboard_mode:
+		GameManager.save_game_to_disk("tutorial")
 	for node in get_tree().get_nodes_in_group("teaching_toolbar"):
 		node.queue_free()
 	if _teaching_toolbar != null and is_instance_valid(_teaching_toolbar):
@@ -623,6 +623,80 @@ func _make_button(text: String, pos: Vector2, color: Color) -> Button:
 	btn.add_theme_color_override("font_color", Color.WHITE)
 	return btn
 
+func _set_game_content_visible(v: bool):
+	if is_instance_valid(_board):
+		_board.visible = v
+	if is_instance_valid(_ui_layer):
+		var hud = _ui_layer.get_node_or_null("HUD")
+		if is_instance_valid(hud):
+			hud.visible = v
+
+var _is_mode_active: bool = false
+
+func _show_mode_selection_panel():
+	# 仅在已有活动运行中模式时，才自动保存该模式
+	if _is_mode_active and not GameManager.current_mode_id.is_empty():
+		GameManager.save_game_to_disk(GameManager.current_mode_id)
+	_is_mode_active = false
+
+	_close_teaching_mode()
+	if _sandbox_wizard != null and is_instance_valid(_sandbox_wizard):
+		_sandbox_wizard.queue_free()
+		_sandbox_wizard = null
+
+	_set_game_content_visible(false)
+	if _mode_selection_panel != null and is_instance_valid(_mode_selection_panel):
+		_mode_selection_panel.visible = true
+		return
+
+	var panel_script := preload("res://scripts/ui/mode_selection_panel.gd")
+	_mode_selection_panel = panel_script.new()
+	_mode_selection_panel.mode_selected.connect(_on_mode_selected)
+	_ui_layer.add_child(_mode_selection_panel)
+
+func _on_mode_selected(mode_id: String):
+	if _mode_selection_panel != null and is_instance_valid(_mode_selection_panel):
+		_mode_selection_panel.queue_free()
+		_mode_selection_panel = null
+
+	_close_teaching_mode()
+	if _sandbox_wizard != null and is_instance_valid(_sandbox_wizard):
+		_sandbox_wizard.queue_free()
+		_sandbox_wizard = null
+
+	match mode_id:
+		"classic":
+			GameManager.current_mode_id = "classic"
+			GameManager.is_sandbox_mode = false
+			_set_game_content_visible(true)
+			_update_sandbox_button_ui()
+			_set_top_buttons_visible(true)
+			if _board != null:
+				_board.set_teaching_whiteboard_mode(false)
+			var has_save = GameManager.load_game_from_disk("classic")
+			if not has_save:
+				GameManager.initialize_game()
+			else:
+				_on_state_restored()
+				_on_queue_updated(GameManager.encounter_queue.size())
+			_is_mode_active = true
+			_update_ui_state()
+
+		"sandbox":
+			GameManager.current_mode_id = "sandbox"
+			GameManager.is_sandbox_mode = true
+			_set_game_content_visible(false) # 弹窗阶段隐蔽底盘，防止残留卡片背景展示
+			if _board != null:
+				_board.set_teaching_whiteboard_mode(false)
+			if GameManager.has_mode_save("sandbox"):
+				_show_sandbox_mode_entry_choice()
+			else:
+				_start_sandbox_wizard()
+
+		"tutorial":
+			GameManager.current_mode_id = "tutorial"
+			_on_tutorial_pressed()
+	
 func _on_sandbox_pressed():
 	_close_teaching_mode()
 	if _sandbox_wizard != null and is_instance_valid(_sandbox_wizard):
@@ -654,12 +728,12 @@ func _on_tutorial_pressed():
 	# 如果已经开启了教学画板工具箱，则关闭并恢复原盘面
 	if _teaching_toolbar != null and is_instance_valid(_teaching_toolbar):
 		_close_teaching_mode()
-		GameManager.load_game_from_disk()
-		GameManager.board_changed.emit()
+		_show_mode_selection_panel()
 		return
 		
-	# 1. 暂存当前正式/沙盒游戏进度到磁盘
-	GameManager.save_game_to_disk()
+	# 1. 尝试读入专属教学模式存档
+	GameManager.current_mode_id = "tutorial"
+	var has_save := GameManager.load_game_from_disk("tutorial")
 	
 	# 2. 开启电子画板模式与卡牌抽象显示
 	_board.set_teaching_whiteboard_mode(true)
@@ -674,18 +748,23 @@ func _on_tutorial_pressed():
 	if not _board.card_right_clicked.is_connected(_on_whiteboard_card_right_clicked):
 		_board.card_right_clicked.connect(_on_whiteboard_card_right_clicked)
 	
-	# 3. 初始时清空画板上的所有卡牌（初始空白画板）并隐藏正常游戏模式下的UI按钮
-	_clear_whiteboard_cards()
+	# 3. 首次开启才清空，有存档则恢复画板盘面
+	if not has_save:
+		_clear_whiteboard_cards()
+	else:
+		_on_state_restored()
+		
+	_set_game_content_visible(true)
+	_is_mode_active = true
 	_update_ui_state()
-	
+
 	var toolbar_script := preload("res://scripts/ui/teaching_toolbar_panel.gd")
 	_teaching_toolbar = toolbar_script.new()
 	_ui_layer.add_child(_teaching_toolbar)
 	
 	_teaching_toolbar.closed.connect(func():
 		_close_teaching_mode()
-		GameManager.load_game_from_disk()
-		GameManager.board_changed.emit()
+		_show_mode_selection_panel()
 	)
 	
 	_teaching_toolbar.tool_selected.connect(func(tool_mode: String):
@@ -701,6 +780,7 @@ func _on_tutorial_pressed():
 				m.division = div_id
 				GameManager.board_changed.emit()
 				_update_whiteboard_selected_info(m)
+				GameManager.save_game_to_disk("tutorial")
 	)
 	
 	_teaching_toolbar.remove_card_requested.connect(func():
@@ -713,10 +793,12 @@ func _on_tutorial_pressed():
 				if _teaching_toolbar != null and is_instance_valid(_teaching_toolbar):
 					_teaching_toolbar.update_selected_card_info("", 0, "")
 				GameManager.board_changed.emit()
+				GameManager.save_game_to_disk("tutorial")
 	)
 	
 	_teaching_toolbar.clear_all_requested.connect(func():
 		_clear_whiteboard_cards()
+		GameManager.save_game_to_disk("tutorial")
 	)
 	
 	_teaching_toolbar.add_star_requested.connect(func():
@@ -726,6 +808,7 @@ func _on_tutorial_pressed():
 				m.rank = clampi(m.rank + 1, 0, 3)
 				GameManager.board_changed.emit()
 				_update_whiteboard_selected_info(m)
+				GameManager.save_game_to_disk("tutorial")
 		else:
 			_teaching_toolbar.toggle_or_set_tool("ADD_STAR")
 	)
@@ -737,6 +820,7 @@ func _on_tutorial_pressed():
 				m.rank = clampi(m.rank - 1, 0, 3)
 				GameManager.board_changed.emit()
 				_update_whiteboard_selected_info(m)
+				GameManager.save_game_to_disk("tutorial")
 		else:
 			_teaching_toolbar.toggle_or_set_tool("SUB_STAR")
 	)
@@ -750,6 +834,7 @@ func _on_tutorial_pressed():
 				if card:
 					card.update_display()
 				_update_whiteboard_selected_info(m)
+				GameManager.save_game_to_disk("tutorial")
 		else:
 			_teaching_toolbar.toggle_or_set_tool("TOGGLE_REVEAL")
 	)
@@ -966,11 +1051,11 @@ func _place_whiteboard_card_at_slot(slot_type: String, target_div: int):
 			candidate.rank = 1 # 新放置于成员位：默认 1 星
 			candidate.is_imprisoned = false
 		"PRISON":
-			candidate.division = GameManager.Division.NONE # 新放置于在押位：默认不属于任何部门
+			candidate.division = GameManager.Division.NONE # 恢复普通身份
 			candidate.is_leader = false
-			candidate.rank = 3 # 新放置于在押位：默认 3 星
-			candidate.is_imprisoned = true
-			candidate.prison_turns_left = 3
+			candidate.rank = 1
+			candidate.is_imprisoned = false
+			candidate.prison_turns_left = 0
 		"FREE", _:
 			candidate.division = GameManager.Division.NONE
 			candidate.is_leader = false
@@ -978,6 +1063,95 @@ func _place_whiteboard_card_at_slot(slot_type: String, target_div: int):
 			candidate.is_imprisoned = false
 
 	GameManager.board_changed.emit()
+
+func _show_sandbox_mode_entry_choice():
+	var backdrop := Control.new()
+	backdrop.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
+	_ui_layer.add_child(backdrop)
+
+	var color_rect := ColorRect.new()
+	color_rect.color = Color(0, 0, 0, 0.55)
+	color_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	backdrop.add_child(color_rect)
+
+	var panel := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.08, 0.12, 0.98)
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(0.8, 0.65, 0.25, 0.9)
+	style.corner_radius_top_left = 12
+	style.corner_radius_top_right = 12
+	style.corner_radius_bottom_left = 12
+	style.corner_radius_bottom_right = 12
+	style.shadow_color = Color(0, 0, 0, 0.7)
+	style.shadow_size = 18
+	style.content_margin_left = 30
+	style.content_margin_right = 30
+	style.content_margin_top = 24
+	style.content_margin_bottom = 24
+	panel.add_theme_stylebox_override("panel", style)
+
+	var panel_size := Vector2(460, 210)
+	panel.size = panel_size
+	var vp := get_viewport_rect().size
+	panel.position = Vector2((vp.x - panel_size.x) * 0.5, (vp.y - panel_size.y) * 0.5)
+	backdrop.add_child(panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 18)
+	panel.add_child(vbox)
+
+	var title_lbl := Label.new()
+	title_lbl.text = "🛠 沙盒模式入口"
+	title_lbl.add_theme_font_size_override("font_size", 20)
+	title_lbl.add_theme_color_override("font_color", Color(0.95, 0.82, 0.45))
+	vbox.add_child(title_lbl)
+
+	var text_lbl := Label.new()
+	text_lbl.text = "检测到您之前保存过沙盒局势，请选择您要进行的操作："
+	text_lbl.add_theme_font_size_override("font_size", 15)
+	text_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 0.95))
+	text_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vbox.add_child(text_lbl)
+
+	var btn_hbox := HBoxContainer.new()
+	btn_hbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	btn_hbox.add_theme_constant_override("separation", 16)
+	vbox.add_child(btn_hbox)
+
+	var resume_btn := Button.new()
+	resume_btn.text = " ▶ 继续上次沙盒局势 "
+	resume_btn.custom_minimum_size = Vector2(180, 44)
+	resume_btn.add_theme_font_size_override("font_size", 15)
+	resume_btn.pressed.connect(func():
+		backdrop.queue_free()
+		GameManager.is_sandbox_mode = true
+		_set_top_buttons_visible(true)
+		var loaded = GameManager.load_game_from_disk("sandbox")
+		if loaded:
+			_on_state_restored()
+			_refresh_ui_after_sandbox_activation()
+			_set_game_content_visible(true)
+			_is_mode_active = true
+		else:
+			_start_sandbox_wizard()
+	)
+	btn_hbox.add_child(resume_btn)
+
+	var wizard_btn := Button.new()
+	wizard_btn.text = " 🛠 重新开启布阵向导 "
+	wizard_btn.custom_minimum_size = Vector2(180, 44)
+	wizard_btn.add_theme_font_size_override("font_size", 15)
+	wizard_btn.pressed.connect(func():
+		backdrop.queue_free()
+		GameManager.delete_save_file("sandbox")
+		_start_sandbox_wizard()
+	)
+	btn_hbox.add_child(wizard_btn)
 
 func _show_sandbox_confirmation_popup():
 	# 创建黑色半透明背景遮罩
@@ -1049,7 +1223,9 @@ func _show_sandbox_confirmation_popup():
 	btn_hbox.add_child(ok_btn)
 
 func _start_sandbox_wizard():
-	# 开启沙盒向导
+	# 开启沙盒向导时激活底盘与插槽可视化 (保证步骤2/3/4可在棋盘上拖放部署人员)
+	_set_game_content_visible(true)
+
 	var wizard_script := preload("res://scripts/ui/sandbox_setup_wizard.gd")
 	_sandbox_wizard = wizard_script.new()
 	_sandbox_wizard.completed.connect(_on_wizard_completed)
@@ -1061,17 +1237,20 @@ func _start_sandbox_wizard():
 	_update_ui_state()
 
 	# 临时将按钮显示为“正在布阵...”
-	_sandbox_btn.text = "🛠 正在布阵..."
-	_set_button_color(_sandbox_btn, Color(0.6, 0.4, 0.1))
+	if is_instance_valid(_sandbox_btn):
+		_sandbox_btn.text = "🛠 正在布阵..."
+		_set_button_color(_sandbox_btn, Color(0.6, 0.4, 0.1))
 
 func _on_wizard_completed():
 	_sandbox_wizard = null
 	GameManager.is_sandbox_mode = true
+	_is_mode_active = true
+	_set_game_content_visible(true)
 	print("Sandbox Wizard completed: Sandbox Mode active!")
 	_update_sandbox_button_ui()
 	_set_top_buttons_visible(true)
 	_refresh_ui_after_sandbox_activation()
-	GameManager.save_game_to_disk()
+	GameManager.save_game_to_disk("sandbox")
 
 func _refresh_ui_after_sandbox_activation():
 	# 隐藏突袭和挑战主脑按钮
@@ -1093,23 +1272,23 @@ func _refresh_ui_after_sandbox_activation():
 func _on_wizard_closed():
 	_sandbox_wizard = null
 	GameManager.is_sandbox_mode = false
-	print("Sandbox Wizard aborted/closed: Normal Mode active!")
-	_update_sandbox_button_ui()
-	_set_top_buttons_visible(true)
-	_on_reset_pressed()
+	print("Sandbox Wizard closed: Returning to Mode Selection Panel!")
+	_show_mode_selection_panel()
 
 func _set_top_buttons_visible(v: bool):
 	if is_instance_valid(_encounter_btn): _encounter_btn.visible = v
-	if is_instance_valid(_reset_btn): _reset_btn.visible = v
+	if is_instance_valid(_reset_btn): _reset_btn.visible = v and not GameManager.is_sandbox_mode
 	if is_instance_valid(_undo_btn): _undo_btn.visible = v
+	if is_instance_valid(_mode_select_btn): _mode_select_btn.visible = v
 
 func _update_sandbox_button_ui():
-	if GameManager.is_sandbox_mode:
-		_sandbox_btn.text = "🛠 沙盒模式: 开"
-		_set_button_color(_sandbox_btn, Color(0.15, 0.6, 0.5)) # Teal for Active
-	else:
-		_sandbox_btn.text = "🛠 沙盒模式: 关"
-		_set_button_color(_sandbox_btn, Color(0.4, 0.4, 0.4)) # Gray for Inactive
+	if is_instance_valid(_sandbox_btn):
+		if GameManager.is_sandbox_mode:
+			_sandbox_btn.text = "🛠 沙盒模式: 开"
+			_set_button_color(_sandbox_btn, Color(0.15, 0.6, 0.5)) # Teal for Active
+		else:
+			_sandbox_btn.text = "🛠 沙盒模式: 关"
+			_set_button_color(_sandbox_btn, Color(0.4, 0.4, 0.4)) # Gray for Inactive
 
 func _set_button_color(btn: Button, color: Color):
 	var style = btn.get_theme_stylebox("normal")

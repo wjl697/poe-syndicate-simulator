@@ -290,7 +290,7 @@ func handle_board_card_hovered(mname: String, screen_pos: Vector2):
 	if _current_step != 4:
 		return
 	var m = GameManager.members.get(mname)
-	if m == null or m.division == GameManager.Division.NONE:
+	if m == null or not m.is_on_board:
 		return
 		
 	_pending_hover_member = mname
@@ -537,7 +537,32 @@ func _select_relation_mode(mode: int):
 	_relation_tip_label.text = "选择要连接的第一张卡片..."
 
 # ===== 状态改变 & UI 刷新 =====
+func _clean_invalid_relationships():
+	var valid_rels: Array = []
+	for rel in GameManager.relationships:
+		var ma = GameManager.members.get(rel.member_a)
+		var mb = GameManager.members.get(rel.member_b)
+		if ma and ma.is_on_board and mb and mb.is_on_board:
+			valid_rels.append(rel)
+	GameManager.relationships = valid_rels
+
 func _update_step_ui():
+	_clean_invalid_relationships()
+
+	# 返回步骤 2 时：自动释放所有在押成员，让其重置并回归常规部门身份
+	if _current_step == 2:
+		for mname in GameManager.members:
+			var m = GameManager.members[mname]
+			if m.is_imprisoned:
+				m.is_imprisoned = false
+				m.prison_turns_left = 0
+		GameManager.prison_queue.clear()
+
+	var board = _get_board_node()
+	if board != null and is_instance_valid(board):
+		board.step2_temp_return_prison_members = (_current_step == 2)
+		GameManager.board_changed.emit()
+
 	# 显式控制手动管理的替补卡牌节点的可见性，防止在步骤 2/3/4 依然遗留在屏幕上
 	for mname in _benched_card_nodes:
 		var node = _benched_card_nodes[mname]

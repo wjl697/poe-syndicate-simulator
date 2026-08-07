@@ -68,6 +68,7 @@ const JITTER_Y := 20
 var _dynamic_guards: Array[Rect2] = []
 var _custom_slots: Dictionary = {}    # Division -> Array[Vector2] (世界坐标)
 var _leader_slots: Dictionary = {}    # Division -> Vector2 (首领专属坐标)
+var step2_temp_return_prison_members: bool = false
 
 
 signal slot_clicked(slot_info: Dictionary)
@@ -297,14 +298,14 @@ func _layout_cards():
 
 		# 首领动画
 		var leader = GameManager.get_division_leader(div)
-		if leader and _cards.has(leader.member_name) and not leader.is_imprisoned:
+		if leader and _cards.has(leader.member_name) and (step2_temp_return_prison_members or not leader.is_imprisoned):
 			assigned_positions.append(leader_target)
 			_animate_card_to(_cards[leader.member_name], leader_target)
 
-		# 收集该部门非监禁部下
+		# 收集该部门非监禁部下（步骤2避让模式下包含监禁部下）
 		var active: Array = []
 		for m in GameManager.get_division_members(div):
-			if not m.is_imprisoned and _cards.has(m.member_name):
+			if (step2_temp_return_prison_members or not m.is_imprisoned) and _cards.has(m.member_name):
 				active.append(m)
 
 		# 部下：优先使用场景中指定的自定义坑位，不足时回退数学模式
@@ -327,41 +328,42 @@ func _layout_cards():
 			if final_pos.y > max_sub_y:
 				max_sub_y = final_pos.y
 
-	# --- 2. 审讯区（读取“审讯区域”控件的绝对坐标与几何中心） ---
-	var imprisoned: Array = []
-	for mname in GameManager.members:
-		var m = GameManager.members[mname]
-		if m.is_imprisoned and m.is_on_board and _cards.has(mname):
-			imprisoned.append(mname)
+	# --- 2. 审讯区（非步骤2避让状态下，被审讯成员平滑移入底部木框审讯区域） ---
+	if not step2_temp_return_prison_members:
+		var imprisoned: Array = []
+		for mname in GameManager.members:
+			var m = GameManager.members[mname]
+			if m.is_imprisoned and m.is_on_board and _cards.has(mname):
+				imprisoned.append(mname)
 
-	var prison_rect := _get_region_control_rect("审讯区域")
-	var prison_center_x := 0.0
-	var prison_center_y := PRISON_Y
-	if prison_rect.size != Vector2.ZERO:
-		prison_center_x = prison_rect.get_center().x
-		prison_center_y = prison_rect.get_center().y
-	else:
-		var prison_nodes = get_tree().get_nodes_in_group("guard_zone")
-		for node in prison_nodes:
-			if node.name == "GuardZone_3" and node is Control:
-				var canvas_trans = get_viewport().get_canvas_transform()
-				var vp_rect = node.get_global_rect()
-				var global_pos = canvas_trans.affine_inverse() * vp_rect.get_center()
-				prison_center_x = to_local(global_pos).x
-				break
+		var prison_rect := _get_region_control_rect("审讯区域")
+		var prison_center_x := 0.0
+		var prison_center_y := PRISON_Y
+		if prison_rect.size != Vector2.ZERO:
+			prison_center_x = prison_rect.get_center().x
+			prison_center_y = prison_rect.get_center().y
+		else:
+			var prison_nodes = get_tree().get_nodes_in_group("guard_zone")
+			for node in prison_nodes:
+				if node.name == "GuardZone_3" and node is Control:
+					var canvas_trans = get_viewport().get_canvas_transform()
+					var vp_rect = node.get_global_rect()
+					var global_pos = canvas_trans.affine_inverse() * vp_rect.get_center()
+					prison_center_x = to_local(global_pos).x
+					break
 
-	var prison_total_w: float = (imprisoned.size() - 1) * PRISON_X_GAP
-	var prison_start_x: float = prison_center_x - prison_total_w * 0.5
-	
-	for i in range(imprisoned.size()):
-		var p_pos := Vector2(prison_start_x + i * PRISON_X_GAP, prison_center_y)
-		assigned_positions.append(p_pos)
-		_animate_card_to(_cards[imprisoned[i]], p_pos)
+		var prison_total_w: float = (imprisoned.size() - 1) * PRISON_X_GAP
+		var prison_start_x: float = prison_center_x - prison_total_w * 0.5
+		
+		for i in range(imprisoned.size()):
+			var p_pos := Vector2(prison_start_x + i * PRISON_X_GAP, prison_center_y)
+			assigned_positions.append(p_pos)
+			_animate_card_to(_cards[imprisoned[i]], p_pos)
 
 	# --- 3. 自由人：使用场景坑位，自动跳过被部门成员占用的位置 ---
 	var free_members: Array = []
 	for m in GameManager.get_unassigned_members():
-		if not m.is_imprisoned and _cards.has(m.member_name):
+		if (step2_temp_return_prison_members or not m.is_imprisoned) and _cards.has(m.member_name):
 			free_members.append(m)
 
 	if free_members.size() > 0:
@@ -430,7 +432,6 @@ func _get_slot_pattern(count: int) -> Array:
 		var side := 1 if (i % 2 == 0) else -1
 		result.append(Vector2(side * 140, 420 + row * 420))
 	return result
-
 
 # ===== 自由人散落位置（不整齐的排列） =====
 func _get_free_slots(count: int) -> Array:

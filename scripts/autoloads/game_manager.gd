@@ -446,6 +446,7 @@ func _release_imprisoned_member(m: MemberState, apply_rank_penalty: bool = true)
 	m.prison_turns_left = 0
 	m.prison_rank_snapshot = -1
 	m.prison_intel_per_turn_points = 0
+	m.has_pending_prison_penalty = false
 	prison_queue.erase(m.member_name)
 
 	if apply_rank_penalty:
@@ -562,19 +563,19 @@ func generate_encounter() -> Dictionary:
 
 	# 运输 or 防卫
 	var tf_candidates: Array[int] = []
-	if _division_has_encounterable(Division.TRANSPORT) and intelligence.get(Division.TRANSPORT, 0.0) < 1.0:
+	if _division_has_encounterable(Division.TRANSPORT) and not can_raid_safehouse(Division.TRANSPORT):
 		tf_candidates.append(Division.TRANSPORT)
-	if _division_has_encounterable(Division.FORTIFICATION) and intelligence.get(Division.FORTIFICATION, 0.0) < 1.0:
+	if _division_has_encounterable(Division.FORTIFICATION) and not can_raid_safehouse(Division.FORTIFICATION):
 		tf_candidates.append(Division.FORTIFICATION)
 	if not tf_candidates.is_empty():
 		divisions_this_turn.append(tf_candidates[randi() % tf_candidates.size()])
 
 	# 研究
-	if _division_has_encounterable(Division.RESEARCH) and intelligence.get(Division.RESEARCH, 0.0) < 1.0:
+	if _division_has_encounterable(Division.RESEARCH) and not can_raid_safehouse(Division.RESEARCH):
 		divisions_this_turn.append(Division.RESEARCH)
 
 	# 调停
-	if _division_has_encounterable(Division.INTERVENTION) and intelligence.get(Division.INTERVENTION, 0.0) < 1.0:
+	if _division_has_encounterable(Division.INTERVENTION) and not can_raid_safehouse(Division.INTERVENTION):
 		divisions_this_turn.append(Division.INTERVENTION)
 
 	if divisions_this_turn.is_empty():
@@ -872,11 +873,18 @@ func _validate_encounter(enc: Dictionary) -> void:
 	if enc.is_empty() or not enc.has("members"):
 		return
 
+	# 0) 如果遭遇战所在部门本身的情报已经达到 100%（安全屋解锁就绪），该部门屏蔽遭遇战，直接跳过！
+	var enc_div := int(enc.get("division", Division.NONE))
+	if can_raid_safehouse(enc_div):
+		print("[遭遇验证] 部门 ", DIVISION_NAMES.get(enc_div, ""), " 情报已满 100%（安全屋解锁就绪），屏蔽并跳过本场遭遇战！")
+		enc.members = []
+		return
+
 	# 1) 首先过滤掉已入狱、不在盘面上或其所属部门安全屋已就绪的成员（但是允许本部门在押的下属保留，因为随后会被释放）
 	var alive_members: Array = []
 	for m in enc.members:
 		var allow_imprisoned = (int(m.division) == int(enc.division) and not m.is_leader)
-		var is_locked = (m.division != Division.NONE and m.division != int(enc.division) and intelligence.get(m.division, 0.0) >= 1.0)
+		var is_locked = (m.division != Division.NONE and m.division != int(enc.division) and can_raid_safehouse(m.division))
 		if (not m.is_imprisoned or allow_imprisoned) and m.is_on_board and not is_locked:
 			alive_members.append(m)
 
@@ -1033,12 +1041,16 @@ func execute_action(member_name: String, action: int):
 	var m_after: MemberState = members.get(member_name)
 	if m_after and m_after.is_on_board and m_after.has_pending_prison_penalty:
 		m_after.has_pending_prison_penalty = false
-		if m_after.rank > 1:
+		if m_after.rank > 0:
 			m_after.rank -= 1
-			var post_div = DIVISION_NAMES.get(m_after.division, "自由人")
-			result.effects.append(m_after.member_name + " 因提前保释执行延迟降星惩罚（降至 " + str(m_after.rank) + " 星，归属：" + post_div + "）")
+		if m_after.rank <= 0:
+			m_after.rank = 0
+			if not m_after.is_leader:
+				m_after.division = Division.NONE
+			result.effects.append(m_after.member_name + " 因出狱扣减 1 星降至 0 星，变为自由人")
 		else:
-			result.effects.append(m_after.member_name + " 因提前保释执行延迟降星，但由于星级已是最低1星，本次不降星")
+			var post_div = DIVISION_NAMES.get(m_after.division, "自由人") if m_after.division != Division.NONE else "自由人"
+			result.effects.append(m_after.member_name + " 因出狱扣减 1 星（降至 " + str(m_after.rank) + " 星，归属：" + post_div + "）")
 
 	current_encounter.get("processed", []).append(member_name)
 	ActionLogic.refresh_action_caches(self)
@@ -1107,7 +1119,16 @@ func _check_encounter_end():
 	for m in current_encounter.get("members", []):
 		if m.member_name not in current_encounter.get("processed", []):
 			return
-	# 当前遭遇完成
+	# 当前遭遇完成，确保残余延迟出狱扣星惩罚全部结算
+	for m in current_encounter.get("members", []):
+		if m.has_pending_prison_penalty:
+			m.has_pending_prison_penalty = false
+			if m.rank > 0:
+				m.rank -= 1
+			if m.rank <= 0:
+				m.rank = 0
+				if not m.is_leader:
+					m.division = Division.NONE
 	var div_name: String = DIVISION_NAMES.get(current_encounter.get("division", 0), "未知")
 	print("[遭遇结束] ", div_name, " | 处理人数: ", current_encounter.get("processed", []).size())
 	current_encounter.clear()
@@ -1115,14 +1136,16 @@ func _check_encounter_end():
 
 # ===== 藏身处 =====
 func can_raid_safehouse(div: int) -> bool:
-	return intelligence.get(div, 0.0) >= 1.0
+	if div == Division.NONE:
+		return false
+	return _to_intel_points(intelligence.get(div, 0.0)) >= INTEL_READY_THRESHOLD_POINTS
 
-func _promote_new_leader(div: int) -> String:
+func _promote_new_leader(div: int, exclude_member_name: String = "") -> String:
 	# 优先从部门活跃下属中按等级最高提拔
 	var candidates: Array = get_division_members(div)
 	var valid: Array = []
 	for c in candidates:
-		if not c.is_leader and not c.is_imprisoned:
+		if not c.is_leader and not c.is_imprisoned and c.is_on_board and c.member_name != exclude_member_name:
 			valid.append(c)
 
 	if not valid.is_empty():
@@ -1142,7 +1165,7 @@ func _promote_new_leader(div: int) -> String:
 	var free_members: Array = get_unassigned_members()
 	var free_valid: Array = []
 	for c in free_members:
-		if not c.is_imprisoned:
+		if not c.is_imprisoned and c.member_name != exclude_member_name:
 			free_valid.append(c)
 	if not free_valid.is_empty():
 		var promoted_free = free_valid[randi() % free_valid.size()]
@@ -1155,6 +1178,8 @@ func _promote_new_leader(div: int) -> String:
 	var transfer_pool: Array = []
 	var transfer_leader_pool: Array = []
 	for mname in members:
+		if mname == exclude_member_name:
+			continue
 		var candidate = members[mname]
 		if not candidate.is_on_board or candidate.is_imprisoned:
 			continue
@@ -1182,7 +1207,7 @@ func _promote_new_leader(div: int) -> String:
 		var msg = promoted.member_name + " 从 " + DIVISION_NAMES.get(promoted_from_div, "") + " 调任为 " + DIVISION_NAMES.get(div, "") + " 新首领（原部门星级作废，重置为1星）"
 		if promoted_was_leader:
 			# 递归提拔原部门的新首领
-			var sub_msg = _promote_new_leader(promoted_from_div)
+			var sub_msg = _promote_new_leader(promoted_from_div, exclude_member_name)
 			if sub_msg != "":
 				msg += " | " + sub_msg
 		return msg
@@ -1194,7 +1219,30 @@ func raid_safehouse(div: int):
 		return
 	save_state()
 	
-	# 首领变为自由人
+	# 1. 所有同部门在押成员从审讯室释放（星级减1，若为1星则保持1星不减）
+	var prisoners_to_release: Array[MemberState] = []
+	for mname in members:
+		var m: MemberState = members[mname]
+		if m.is_imprisoned and (m.division == div or m.prison_intel_division == div):
+			prisoners_to_release.append(m)
+
+	for m in prisoners_to_release:
+		m.is_imprisoned = false
+		m.prison_turns_left = 0
+		m.prison_rank_snapshot = -1
+		m.prison_intel_per_turn_points = 0
+		m.has_pending_prison_penalty = false
+		prison_queue.erase(m.member_name)
+
+		if m.rank > 1:
+			m.rank -= 1
+			print("[安全屋释放] 在押成员 ", m.member_name, " 从审讯室释放，星级减1（降至 ", m.rank, " 星）")
+		else:
+			print("[安全屋释放] 在押成员 ", m.member_name, " 从审讯室释放，由于为 1 星，保持 1 星不减")
+
+		member_released.emit(m.member_name)
+	
+	# 2. 首领变为0星自由人
 	var leader = get_division_leader(div)
 	if leader:
 		leader.is_leader = false
@@ -1203,12 +1251,12 @@ func raid_safehouse(div: int):
 		leader.rank = 0
 		print("[DEBUG 安全屋] 原首领变为0星自由人: ", leader.member_name)
 
-	# 新首领晋升（非在押成员优先，包含自由人/调任逻辑）
+	# 3. 新首领晋升（非在押成员优先，包含自由人/调任逻辑）
 	var promo_msg = _promote_new_leader(div)
 	if promo_msg != "":
 		print("[DEBUG 安全屋] ", promo_msg)
 
-	# 重置该部门情报值，并清除衰减计时
+	# 4. 重置该部门情报值，并清除衰减计时
 	intelligence[div] = 0.0
 	safehouse_100_turns.erase(div)
 	intelligence_changed.emit(div, 0.0)

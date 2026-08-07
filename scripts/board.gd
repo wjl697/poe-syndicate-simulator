@@ -70,8 +70,11 @@ var _custom_slots: Dictionary = {}    # Division -> Array[Vector2] (世界坐标
 var _leader_slots: Dictionary = {}    # Division -> Vector2 (首领专属坐标)
 
 
+signal slot_clicked(slot_info: Dictionary)
+
 # ===== 子节点 =====
 var _cards: Dictionary = {}           # member_name -> MemberCard
+var is_teaching_whiteboard_mode: bool = false # 电子画板模式标志
 var _rel_lines = null                 # RelationshipLines
 var _badges: Dictionary = {}          # Division -> Sprite2D
 var _mastermind_card: Sprite2D
@@ -187,6 +190,12 @@ func _parse_custom_slots():
 		GameManager.Division.INTERVENTION: "leader_intervention_slot",
 	}
 	
+	# 确保所有区域 ColorRect 节点不遮挡/阻塞鼠标点击事件
+	var unassigned_nodes = get_tree().get_nodes_in_group("unassigned_slot")
+	for u_node in unassigned_nodes:
+		if u_node is Control:
+			u_node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+
 	for div in leader_groups:
 		var nodes = get_tree().get_nodes_in_group(leader_groups[div])
 		for node in nodes:
@@ -318,32 +327,34 @@ func _layout_cards():
 			if final_pos.y > max_sub_y:
 				max_sub_y = final_pos.y
 
-	# --- 2. 审讯区（自动横向对准场景中 GuardZone_3 底框的中心，解决和木底板错位的问题） ---
+	# --- 2. 审讯区（读取“审讯区域”控件的绝对坐标与几何中心） ---
 	var imprisoned: Array = []
 	for mname in GameManager.members:
 		var m = GameManager.members[mname]
 		if m.is_imprisoned and m.is_on_board and _cards.has(mname):
 			imprisoned.append(mname)
 
+	var prison_rect := _get_region_control_rect("审讯区域")
 	var prison_center_x := 0.0
-	var prison_nodes = get_tree().get_nodes_in_group("guard_zone")
-	var prison_slot: Control = null
-	for node in prison_nodes:
-		if node.name == "GuardZone_3" and node is Control:
-			prison_slot = node
-			break
-			
-	if prison_slot:
-		var canvas_trans = get_viewport().get_canvas_transform()
-		var vp_rect = prison_slot.get_global_rect()
-		var global_pos = canvas_trans.affine_inverse() * vp_rect.get_center()
-		prison_center_x = to_local(global_pos).x
+	var prison_center_y := PRISON_Y
+	if prison_rect.size != Vector2.ZERO:
+		prison_center_x = prison_rect.get_center().x
+		prison_center_y = prison_rect.get_center().y
+	else:
+		var prison_nodes = get_tree().get_nodes_in_group("guard_zone")
+		for node in prison_nodes:
+			if node.name == "GuardZone_3" and node is Control:
+				var canvas_trans = get_viewport().get_canvas_transform()
+				var vp_rect = node.get_global_rect()
+				var global_pos = canvas_trans.affine_inverse() * vp_rect.get_center()
+				prison_center_x = to_local(global_pos).x
+				break
 
 	var prison_total_w: float = (imprisoned.size() - 1) * PRISON_X_GAP
 	var prison_start_x: float = prison_center_x - prison_total_w * 0.5
 	
 	for i in range(imprisoned.size()):
-		var p_pos := Vector2(prison_start_x + i * PRISON_X_GAP, PRISON_Y)
+		var p_pos := Vector2(prison_start_x + i * PRISON_X_GAP, prison_center_y)
 		assigned_positions.append(p_pos)
 		_animate_card_to(_cards[imprisoned[i]], p_pos)
 
@@ -481,8 +492,9 @@ func _animate_card_to(card: MemberCard, target: Vector2):
 	tw.tween_property(card, "position", target, 0.4).set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
 	tw.tween_callback(Callable(self, "_snap_card_to_pixel").bind(card))
 
-func _snap_card_to_pixel(card: MemberCard):
-	card.position = Vector2(round(card.position.x), round(card.position.y))
+func _snap_card_to_pixel(card):
+	if is_instance_valid(card):
+		card.position = Vector2(round(card.position.x), round(card.position.y))
 
 func _update_relationship_lines():
 	if _rel_lines == null:
@@ -541,6 +553,7 @@ func _on_board_changed():
 			card.scale = Vector2(CARD_SCALE, CARD_SCALE)
 			card.setup(m)
 			card.card_clicked.connect(_on_card_click)
+			card.card_right_clicked.connect(func(mname: String, click_pos: Vector2): card_right_clicked.emit(mname, click_pos))
 			card.card_hovered.connect(_on_card_hover.bind(mname))
 			card.card_unhovered.connect(_on_card_unhover)
 			# 初始坐标处理：如果有沙盒向导且处于第二步骤，则把起点设为底部坞中卡片的屏幕位置
@@ -560,6 +573,7 @@ func _on_board_changed():
 
 	# 3. 刷新所有卡片显示
 	for mname in _cards:
+		_cards[mname].is_abstract_mode = is_teaching_whiteboard_mode
 		_cards[mname].member_data = GameManager.members[mname]
 		_cards[mname].update_display()
 		
@@ -567,8 +581,118 @@ func _on_board_changed():
 	_parse_custom_slots()
 	# 5. 重新布局
 	_layout_cards()
-	# 延迟更新（原连线更新已移除）
-	await get_tree().create_timer(0.5).timeout
+
+var show_teaching_frames: bool = false
+
+func _get_region_control_rect(region_name: String) -> Rect2:
+	var canvas_trans = get_viewport().get_canvas_transform()
+	var nodes = get_tree().get_nodes_in_group("unassigned_slot")
+	for node in nodes:
+		if is_instance_valid(node) and String(node.name) == region_name and node is Control:
+			var vp_rect: Rect2 = node.get_global_rect()
+			var g_pos = canvas_trans.affine_inverse() * vp_rect.position
+			var g_end = canvas_trans.affine_inverse() * (vp_rect.position + vp_rect.size)
+			return Rect2(to_local(g_pos), g_end - g_pos)
+	return Rect2()
+
+func set_teaching_whiteboard_mode(active: bool):
+	is_teaching_whiteboard_mode = active
+	show_teaching_frames = false # 开启教学模式默认隐藏边框
+	for mname in _cards:
+		_cards[mname].is_abstract_mode = active
+		_cards[mname].update_display()
+	queue_redraw()
+
+func get_screen_to_board_rect(screen_rect: Rect2) -> Rect2:
+	var canvas_trans = get_viewport().get_canvas_transform()
+	var g_tl = canvas_trans.affine_inverse() * screen_rect.position
+	var g_br = canvas_trans.affine_inverse() * (screen_rect.position + screen_rect.size)
+	var l_tl = to_local(g_tl)
+	var l_br = to_local(g_br)
+	return Rect2(l_tl, l_br - l_tl)
+
+func get_region_rect_by_name(node_name: String, fallback_screen_rect: Rect2) -> Rect2:
+	var unassigned_nodes = get_tree().get_nodes_in_group("unassigned_slot")
+	for node in unassigned_nodes:
+		if is_instance_valid(node) and String(node.name) == node_name and node is Control:
+			return get_screen_to_board_rect(node.get_global_rect())
+	return get_screen_to_board_rect(fallback_screen_rect)
+
+func _draw():
+	if not is_teaching_whiteboard_mode or not show_teaching_frames:
+		return
+		
+	var default_font = ThemeDB.fallback_font
+	if default_font == null:
+		return
+
+	# 100% 精准读取您在场景树里摆放的 6 大参考控件矩形，并经由 Camera2D 逆矩阵转为 2D 世界画板 Rect
+	var regions := [
+		{"rect": get_region_rect_by_name("审讯区域", Rect2(726, 782, 470, 60)),     "fill": Color(0.85, 0.4, 0.9, 0.08), "border": Color(0.85, 0.4, 0.9, 0.75), "text": "⛓️ 审讯关押区"},
+		{"rect": get_region_rect_by_name("自由人区域", Rect2(733, 858, 452, 160)),   "fill": Color(0.7, 0.7, 0.7, 0.08),  "border": Color(0.75, 0.75, 0.75, 0.7), "text": "🏕️ 自由人区"},
+		{"rect": get_region_rect_by_name("运输部成员区域", Rect2(129, 314, 419, 528)), "fill": Color(0.2, 0.6, 1.0, 0.08),  "border": Color(0.2, 0.6, 1.0, 0.75), "text": "🚚 运输部成员区"},
+		{"rect": get_region_rect_by_name("防卫部成员区域", Rect2(563, 448, 365, 321)), "fill": Color(0.3, 0.8, 0.4, 0.08),  "border": Color(0.3, 0.8, 0.4, 0.75), "text": "🛡️ 防卫部成员区"},
+		{"rect": get_region_rect_by_name("科研部成员区域", Rect2(943, 448, 343, 321)), "fill": Color(0.9, 0.3, 0.3, 0.08),  "border": Color(0.9, 0.3, 0.3, 0.75), "text": "🔬 科研部成员区"},
+		{"rect": get_region_rect_by_name("调停部成员区域", Rect2(1302, 314, 489, 531)),"fill": Color(1.0, 0.7, 0.2, 0.08),  "border": Color(1.0, 0.7, 0.2, 0.75), "text": "⚖️ 调停部成员区"},
+	]
+
+	for data in regions:
+		var r: Rect2 = data["rect"]
+		draw_rect(r, data["fill"], true)
+		draw_rect(r, data["border"], false, 3.0)
+		draw_string(default_font, Vector2(r.position.x + 15, r.position.y + 48), data["text"], HORIZONTAL_ALIGNMENT_LEFT, -1, 38, data["border"])
+
+func get_slot_at_position(local_pos: Vector2) -> Dictionary:
+	# 1. 动态读取 6 大参考控件并进行 100% 精准点选判定
+	if get_region_rect_by_name("审讯区域", Rect2(726, 782, 470, 60)).has_point(local_pos):
+		return {"slot_type": "PRISON", "division": GameManager.Division.NONE}
+	if get_region_rect_by_name("自由人区域", Rect2(733, 858, 452, 160)).has_point(local_pos):
+		return {"slot_type": "FREE", "division": GameManager.Division.NONE}
+	if get_region_rect_by_name("运输部成员区域", Rect2(129, 314, 419, 528)).has_point(local_pos):
+		return {"slot_type": "SUBORDINATE", "division": GameManager.Division.TRANSPORT}
+	if get_region_rect_by_name("防卫部成员区域", Rect2(563, 448, 365, 321)).has_point(local_pos):
+		return {"slot_type": "SUBORDINATE", "division": GameManager.Division.FORTIFICATION}
+	if get_region_rect_by_name("科研部成员区域", Rect2(943, 448, 343, 321)).has_point(local_pos):
+		return {"slot_type": "SUBORDINATE", "division": GameManager.Division.RESEARCH}
+	if get_region_rect_by_name("调停部成员区域", Rect2(1302, 314, 489, 531)).has_point(local_pos):
+		return {"slot_type": "SUBORDINATE", "division": GameManager.Division.INTERVENTION}
+
+	# 2. 检查首领位（对齐背景原画红框区域）
+	for div in GameManager.ALL_DIVISIONS:
+		var leader_target: Vector2
+		if _leader_slots.has(div):
+			leader_target = _leader_slots[div]
+		else:
+			leader_target = Vector2(COLUMN_X[div], LEADER_Y[div])
+			
+		if local_pos.distance_to(leader_target) < 160.0:
+			return {"slot_type": "LEADER", "division": div}
+
+	return {"slot_type": "NONE", "division": GameManager.Division.NONE}
+
+signal cancel_tool_requested()
+signal star_scroll_requested(dir: int)
+signal middle_click_requested()
+signal card_right_clicked(member_name: String, global_pos: Vector2)
+
+func _unhandled_input(event: InputEvent):
+	if not is_teaching_whiteboard_mode:
+		return
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			var local_pos = to_local(get_global_mouse_position())
+			var info = get_slot_at_position(local_pos)
+			slot_clicked.emit(info)
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			cancel_tool_requested.emit()
+		elif event.button_index == MOUSE_BUTTON_MIDDLE:
+			middle_click_requested.emit()
+		elif event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			star_scroll_requested.emit(1)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			star_scroll_requested.emit(-1)
+	elif event is InputEventKey and event.pressed and event.keycode == KEY_ESCAPE:
+		cancel_tool_requested.emit()
 
 func _on_intel_changed(_div: int, _value: float):
 	# 现在进度条内置在 MemberCard 中。当情报变化时，刷新所有卡片即可同步

@@ -235,9 +235,12 @@ static func get_action_button_text(gm, member, action: int) -> String:
 static func get_overlay_description(gm, member, action: int) -> String:
 	if member == null: return ""
 	var name = member.member_name
+	var enc_div: int = gm.current_encounter.get("division", gm.Division.NONE)
+	var enc_div_name = gm.DIVISION_NAMES.get(enc_div, "无") if enc_div != gm.Division.NONE else "无"
+
 	var effective_div = member.division
 	if effective_div == gm.Division.NONE:
-		effective_div = gm.current_encounter.get("division", gm.Division.NONE)
+		effective_div = enc_div
 	var div_name = gm.DIVISION_NAMES.get(effective_div, "无") if effective_div != gm.Division.NONE else "无"
 
 	match action:
@@ -251,7 +254,7 @@ static func get_overlay_description(gm, member, action: int) -> String:
 			else:
 				intel_points = member.rank * 2
 			intel_points = max(1, intel_points)
-			return name + "被囚禁" + str(gm.PRISON_DURATION) + "回合。+" + str(intel_points) + div_name + "情报每回合。释放后等级-1"
+			return name + "被囚禁" + str(gm.PRISON_DURATION) + "回合。+" + str(intel_points) + enc_div_name + "情报每回合。释放后等级-1"
 		gm.ActionType.EXECUTE:
 			if member.rank >= 3:
 				return "【已达最大等级。无效果】"
@@ -342,11 +345,12 @@ static func _do_interrogate(gm, m, result: Dictionary):
 		_force_release_oldest_prisoner(gm, result)
 
 	var was_leader = m.is_leader
-	if m.is_leader: _leader_step_down(gm, m, result)
-
 	m.is_imprisoned = true
 	m.prison_turns_left = gm.PRISON_DURATION
 	m.prison_rank_snapshot = clampi(m.rank, 0, 3)
+
+	if was_leader:
+		_leader_step_down(gm, m, result)
 	
 	var intel_points = 1
 	if m.division == gm.Division.NONE:
@@ -370,7 +374,7 @@ static func _leader_step_down(gm, m, result: Dictionary):
 	m.is_leader = false
 	result.effects.append(m.member_name + " 从 " + gm.DIVISION_NAMES.get(div, "") + " 首领下台")
 
-	var promo_msg = gm._promote_new_leader(div)
+	var promo_msg = gm._promote_new_leader(div, m.member_name)
 	if promo_msg != "":
 		for msg in promo_msg.split(" | "):
 			result.effects.append(msg)
@@ -603,8 +607,7 @@ static func _do_bargain(gm, m, result: Dictionary):
 static func _kick_member_and_replace(gm, m, result: Dictionary):
 	var kicked_name: String = m.member_name
 	var orig_div: int = m.division
-	
-	if m.is_leader: _leader_step_down(gm, m, result)
+	var was_leader: bool = m.is_leader
 	
 	m.is_on_board = false
 	m.division = gm.Division.NONE
@@ -617,6 +620,13 @@ static func _kick_member_and_replace(gm, m, result: Dictionary):
 	m.rank = 1
 	m.equipment_count = 0
 	if m.member_name in gm.prison_queue: gm.prison_queue.erase(m.member_name)
+	
+	if was_leader and orig_div != gm.Division.NONE:
+		result.effects.append(kicked_name + " 从 " + gm.DIVISION_NAMES.get(orig_div, "") + " 首领下台")
+		var promo_msg = gm._promote_new_leader(orig_div, kicked_name)
+		if promo_msg != "":
+			for msg in promo_msg.split(" | "):
+				result.effects.append(msg)
 	
 	var to_remove: Array = []
 	for rel in gm.relationships:

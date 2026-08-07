@@ -4,10 +4,12 @@ extends Node2D
 ## 成员卡片组件 — 显示成员头像、光晕、星级、名称
 
 signal card_clicked(member_name: String)
+signal card_right_clicked(member_name: String, global_pos: Vector2)
 signal card_hovered(member_name: String)
 signal card_unhovered(member_name: String)
 
 var member_data = null  # GameManager.MemberState reference
+var is_abstract_mode: bool = false # 电子画板抽象显示模式标志
 
 # 子节点
 var halo_sprite: Sprite2D
@@ -52,6 +54,8 @@ const PRISON_TURN_BADGE_SCALE := 1.1
 # 修改这里，悬停放大卡片会自动同步
 const STAR_BASE_SCALE   := 1.2
 const STAR_BASE_POS     := Vector2(160, -130)
+const STAR2_OFFSET      := Vector2(-15, -20)     # 二星角标单独偏移量 (正X向右，正Y向下)
+const STAR3_OFFSET      := Vector2(-30, -25) # 三星角标单独偏移量
 const BADGE_BASE_SCALE  := 0.8
 const BADGE_BASE_POS    := Vector2(-125, -145)
 
@@ -122,6 +126,7 @@ func _build_tree():
 	# 移除原本的黑色阴影，保证文字在纸张上更清晰
 	name_label.remove_theme_color_override("font_shadow_color")
 	name_label.z_index = 5
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(name_label)
 
 	# --- 入狱标记 ---
@@ -259,20 +264,38 @@ func update_display() -> void:
 	var bg_size := Vector2.ZERO
 	if bg_sprite.texture:
 		bg_size = bg_sprite.texture.get_size()
+		if _hit_control:
+			var actual_hit_size = bg_size * bg_sprite.scale
+			_hit_control.size = actual_hit_size
+			_hit_control.position = -actual_hit_size / 2.0
 
 	var is_hidden: bool = not member_data.is_revealed
 
 	# 所有层级图片（背景、光晕、角标、星级、问号）都是 815x447 的预定位图层
 	# 只需直接叠加，无需额外缩放或定位
 
-	# 头像（451x450，需要缩放适配背景区域）
-	if is_hidden:
-		# 隐藏状态：显示问号（815x447 图层，与背景对齐）
+	# 卡片纸质底板素材（人物背景.png）保持全量显示
+	bg_sprite.visible = true
+
+	# 头像与问号
+	if is_abstract_mode:
+		# 电子画板抽象模式：未揭示卡片（无论位于部门还是自由人位置）均显示问号
+		if not member_data.is_revealed:
+			portrait_sprite.visible = true
+			portrait_sprite.texture = _tex_question
+			portrait_sprite.scale = Vector2.ONE
+			portrait_sprite.position = Vector2.ZERO
+		else:
+			portrait_sprite.visible = false
+	elif is_hidden:
+		# 游戏模式隐藏状态：显示问号（815x447 图层，与背景对齐）
+		portrait_sprite.visible = true
 		portrait_sprite.texture = _tex_question
 		portrait_sprite.scale = Vector2.ONE
 		portrait_sprite.position = Vector2.ZERO
 	else:
 		# 揭示状态：显示真实头像（451x450，需要缩放）
+		portrait_sprite.visible = true
 		var ptex = load(member_data.portrait_path)
 		if ptex:
 			portrait_sprite.texture = ptex
@@ -282,13 +305,14 @@ func update_display() -> void:
 				portrait_sprite.scale = Vector2(fit_scale, fit_scale)
 				portrait_sprite.position = Vector2(0, bg_size.y * PORTRAIT_Y_OFFSET_RATIO)
 
-	# 光晕 — 815x447 图层，放大 1.35 倍并在 Y 轴微调向上对齐头像中心
+	# 光晕 — 部门首领显示金色首领光晕，成员与自由人统一显示蓝色成员光晕（方便选中闪烁）
+	halo_sprite.visible = true
 	halo_sprite.texture = _tex_halo_lead if member_data.is_leader else _tex_halo_mem
 	halo_sprite.scale = Vector2(HALO_SCALE_MULT, HALO_SCALE_MULT)
 	halo_sprite.position = Vector2(0, bg_size.y * HALO_Y_OFFSET_RATIO)
 
 	# 星级 — 815x447 图层，直接对齐背景
-	if is_hidden or member_data.rank <= 0:
+	if (not is_abstract_mode and is_hidden) or member_data.rank <= 0:
 		star_sprite.visible = false
 	else:
 		star_sprite.visible = true
@@ -299,9 +323,11 @@ func update_display() -> void:
 		star_sprite.scale = Vector2(STAR_BASE_SCALE, STAR_BASE_SCALE)
 		star_sprite.position = STAR_BASE_POS
 		
-		# 仅当是三星图标时，进行微调（向左上方偏移）
-		if member_data.rank == 3:
-			star_sprite.position += Vector2(-22, -18)
+		# 二星 / 三星角标单独微调偏移
+		if member_data.rank == 2:
+			star_sprite.position += STAR2_OFFSET
+		elif member_data.rank == 3:
+			star_sprite.position += STAR3_OFFSET
 			
 		star_sprite.modulate.a = 0.8
 
@@ -317,15 +343,44 @@ func update_display() -> void:
 			badge_sprite.position = BADGE_BASE_POS
 			badge_sprite.modulate.a = 0.8
 
-	# 名称 — 隐藏时显示「???」
-	if is_hidden:
+	# 名称 — 区分电子画板抽象模式与正常游戏模式
+	if is_abstract_mode:
+		if not member_data.is_revealed:
+			name_label.text = "未揭示"
+			# 未揭示卡：文字置于问号下方，避免重叠遮挡
+			name_label.position = Vector2(-200, 85)
+			name_label.size = Vector2(400, 70)
+			name_label.add_theme_font_size_override("font_size", 40)
+			name_label.add_theme_color_override("font_color", Color8(25, 20, 15))
+		else:
+			if member_data.is_leader:
+				name_label.text = "首领"
+			elif member_data.is_imprisoned:
+				name_label.text = "在押人员"
+			elif member_data.division == GameManager.Division.NONE:
+				name_label.text = "自由人"
+			else:
+				name_label.text = "成员"
+				
+			# 揭示卡：文字居中放大（54pt 醒目大字）
+			name_label.position = Vector2(-200, -45)
+			name_label.size = Vector2(400, 90)
+			name_label.add_theme_font_size_override("font_size", 54)
+			name_label.add_theme_color_override("font_color", Color8(25, 20, 15))
+	elif is_hidden:
 		name_label.text = ""
+		if bg_sprite.texture:
+			name_label.position = Vector2(-bg_size.x * 0.4, bg_size.y * 0.2)
+			name_label.size = Vector2(bg_size.x * 0.8, 60)
+			name_label.add_theme_font_size_override("font_size", 48)
+			name_label.add_theme_color_override("font_color", Color(0, 0, 0))
 	else:
 		name_label.text = member_data.member_name
-	if bg_sprite.texture:
-		name_label.position = Vector2(-bg_size.x * 0.4, bg_size.y * 0.2)
-		name_label.size = Vector2(bg_size.x * 0.8, 60)
-
+		if bg_sprite.texture:
+			name_label.position = Vector2(-bg_size.x * 0.4, bg_size.y * 0.2)
+			name_label.size = Vector2(bg_size.x * 0.8, 60)
+			name_label.add_theme_font_size_override("font_size", 48)
+			name_label.add_theme_color_override("font_color", Color(0, 0, 0))
 	# 入狱
 	prison_icon.visible = member_data.is_imprisoned
 	if member_data.is_imprisoned:
@@ -515,6 +570,32 @@ func set_highlighted(on: bool) -> void:
 func _on_control_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		_update_progress_tooltip(event.position)
+
+	if is_abstract_mode and event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+			if member_data:
+				member_data.rank = clampi(member_data.rank + 1, 0, 3)
+				update_display()
+				get_viewport().set_input_as_handled()
+				return
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+			if member_data:
+				member_data.rank = clampi(member_data.rank - 1, 0, 3)
+				update_display()
+				get_viewport().set_input_as_handled()
+				return
+		elif event.button_index == MOUSE_BUTTON_MIDDLE:
+			if member_data:
+				member_data.is_revealed = not member_data.is_revealed
+				update_display()
+				get_viewport().set_input_as_handled()
+				return
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			if member_data:
+				var screen_center = get_global_transform_with_canvas().origin
+				card_right_clicked.emit(member_data.member_name, screen_center)
+				get_viewport().set_input_as_handled()
+				return
 
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if member_data:

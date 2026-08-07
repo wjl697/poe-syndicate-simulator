@@ -289,3 +289,73 @@ visible = false
 position = Vector2(952.00006, 540)
 scale = Vector2(0.40721652, 0.40721646)
 texture = ExtResource("1_wtcfe")
+
+[node name="自由人区域" type="ColorRect" parent="BackgroundCanvas" unique_id=199628851 groups=["unassigned_slot"]]
+visible = false
+offset_left = 719.0
+offset_top = 782.0
+offset_right = 1198.0
+offset_bottom = 842.0
+size_flags_horizontal = 3
+mouse_filter = 2
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="审讯区域" type="ColorRect" parent="BackgroundCanvas" unique_id=383104362 groups=["unassigned_slot"]]
+visible = false
+offset_left = 732.0
+offset_top = 863.0
+offset_right = 1184.0
+offset_bottom = 1023.0
+size_flags_horizontal = 3
+mouse_filter = 2
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="科研部成员区域" type="ColorRect" parent="BackgroundCanvas" unique_id=931794628 groups=["unassigned_slot"]]
+visible = false
+offset_left = 943.0
+offset_top = 448.0
+offset_right = 1286.0
+offset_bottom = 769.0
+size_flags_horizontal = 3
+mouse_filter = 2
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="调停部成员区域" type="ColorRect" parent="BackgroundCanvas" unique_id=1519053845 groups=["unassigned_slot"]]
+visible = false
+offset_left = 1302.0
+offset_top = 314.0
+offset_right = 1791.0
+offset_bottom = 845.0
+size_flags_horizontal = 3
+mouse_filter = 2
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="防卫部成员区域" type="ColorRect" parent="BackgroundCanvas" unique_id=1768706458 groups=["unassigned_slot"]]
+visible = false
+offset_left = 563.0
+offset_top = 448.0
+offset_right = 928.0
+offset_bottom = 769.0
+size_flags_horizontal = 3
+mouse_filter = 2
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="运输部成员区域" type="ColorRect" parent="BackgroundCanvas" unique_id=905511971 groups=["unassigned_slot"]]
+visible = false
+offset_left = 129.0
+offset_top = 314.0
+offset_right = 548.0
+offset_bottom = 842.0
+size_flags_horizontal = 3
+mouse_filter = 2
+color = Color(0.5, 0.5, 0.5, 0.4)
+
+[node name="工具箱区域" type="ColorRect" parent="BackgroundCanvas" unique_id=1438680755 groups=["unassigned_slot"]]
+visible = false
+offset_left = 1228.0
+offset_top = 858.0
+offset_right = 1757.0
+offset_bottom = 1030.0
+size_flags_horizontal = 3
+mouse_filter = 2
+color = Color(0.5, 0.5, 0.5, 0.4)

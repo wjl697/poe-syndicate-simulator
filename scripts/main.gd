@@ -24,6 +24,11 @@ var _current_encounter_member: String = ""
 var _showing_result: bool = false
 var _finish_enc_btn: Button        # 接替 EncounterPanel 的流程控制按钮
 var _release_all_btn: Button       # 全部释放按钮（位于下一个部门按钮上方）
+var _tutorial_btn: Button          # 教学模式按钮
+var _selected_whiteboard_member: String = ""
+var _whiteboard_line_mode: String = ""
+var _whiteboard_line_first_member: String = ""
+var _teaching_toolbar: Control = null
 var _hover_timer: SceneTreeTimer = null
 var _pending_hover_member: String = ""
 
@@ -91,6 +96,13 @@ func _build_ui_layer():
 	_sandbox_btn.custom_minimum_size = Vector2(160, 40)
 	_sandbox_btn.pressed.connect(_on_sandbox_pressed)
 	hud.add_child(_sandbox_btn)
+
+	# 教学模式按钮 — 右上角（在沙盒模式按钮左侧）
+	_tutorial_btn = _make_button("🎓 教学模式", Vector2(-550, 16), Color(0.2, 0.45, 0.45))
+	_tutorial_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_tutorial_btn.custom_minimum_size = Vector2(150, 40)
+	_tutorial_btn.pressed.connect(_on_tutorial_pressed)
+	hud.add_child(_tutorial_btn)
 
 	# 状态信息 — 顶部中央
 	_info_label = Label.new()
@@ -209,6 +221,10 @@ func _on_board_card_clicked(member_name: String):
 		_sandbox_wizard.handle_board_card_clicked(member_name)
 		return
 
+	if _board != null and _board.is_teaching_whiteboard_mode:
+		_handle_whiteboard_card_clicked(member_name)
+		return
+
 	# 检查是否在遭遇中
 	if GameManager.current_encounter.is_empty():
 		return
@@ -306,6 +322,21 @@ func _on_action_result(result: Dictionary):
 		_card_overlay.dismiss()
 
 func _update_ui_state():
+	var is_teaching := (_board != null and is_instance_valid(_board) and _board.is_teaching_whiteboard_mode)
+	if is_teaching:
+		if _encounter_btn: _encounter_btn.visible = false
+		if _reset_btn: _reset_btn.visible = false
+		if _undo_btn: _undo_btn.visible = false
+		if _release_all_btn: _release_all_btn.visible = false
+		if _finish_enc_btn: _finish_enc_btn.visible = false
+		for div in _safehouse_buttons:
+			if _safehouse_buttons[div]: _safehouse_buttons[div].visible = false
+		return
+		
+	if _encounter_btn: _encounter_btn.visible = true
+	if _reset_btn: _reset_btn.visible = true
+	if _undo_btn: _undo_btn.visible = true
+	
 	var is_in_sandbox_wizard := (_sandbox_wizard != null and is_instance_valid(_sandbox_wizard))
 	var in_encounter := not GameManager.current_encounter.is_empty() or not GameManager.encounter_queue.is_empty()
 	_encounter_btn.disabled = in_encounter
@@ -390,7 +421,124 @@ func _on_raid_pressed(div: int):
 		_safehouse_buttons[div].visible = false
 	_info_label.text = GameManager.DIVISION_NAMES.get(div, "") + " 藏身处已突袭！"
 
+func _close_teaching_mode():
+	for node in get_tree().get_nodes_in_group("teaching_toolbar"):
+		node.queue_free()
+	if _teaching_toolbar != null and is_instance_valid(_teaching_toolbar):
+		_teaching_toolbar.queue_free()
+		_teaching_toolbar = null
+	if _board != null and is_instance_valid(_board):
+		if _board.slot_clicked.is_connected(_on_whiteboard_slot_clicked):
+			_board.slot_clicked.disconnect(_on_whiteboard_slot_clicked)
+		if _board.cancel_tool_requested.is_connected(_on_whiteboard_cancel_tool):
+			_board.cancel_tool_requested.disconnect(_on_whiteboard_cancel_tool)
+		if _board.star_scroll_requested.is_connected(_on_whiteboard_star_scroll):
+			_board.star_scroll_requested.disconnect(_on_whiteboard_star_scroll)
+		if _board.middle_click_requested.is_connected(_on_whiteboard_middle_click):
+			_board.middle_click_requested.disconnect(_on_whiteboard_middle_click)
+		if _board.card_right_clicked.is_connected(_on_whiteboard_card_right_clicked):
+			_board.card_right_clicked.disconnect(_on_whiteboard_card_right_clicked)
+		_board.set_teaching_whiteboard_mode(false)
+	_selected_whiteboard_member = ""
+	_whiteboard_line_mode = ""
+	_whiteboard_line_first_member = ""
+	_update_ui_state()
+
+func _on_whiteboard_star_scroll(dir: int):
+	if _selected_whiteboard_member != "":
+		var m = GameManager.members.get(_selected_whiteboard_member)
+		if m:
+			m.rank = clampi(m.rank + dir, 0, 3)
+			var card = _board.get_card(m.member_name)
+			if card:
+				card.update_display()
+			_update_whiteboard_selected_info(m)
+
+func _on_whiteboard_middle_click():
+	if _selected_whiteboard_member != "":
+		var m = GameManager.members.get(_selected_whiteboard_member)
+		if m:
+			m.is_revealed = not m.is_revealed
+			var card = _board.get_card(m.member_name)
+			if card:
+				card.update_display()
+			_update_whiteboard_selected_info(m)
+
+func _on_whiteboard_card_right_clicked(mname: String, click_pos: Vector2):
+	# 检查当前是否已经打开了针对同一张卡片的右键菜单
+	var active_menus = get_tree().get_nodes_in_group("card_context_menu")
+	var is_same_card_menu_open := false
+	for node in active_menus:
+		if is_instance_valid(node) and node.has_method("get_target_member") and node.get_target_member() == mname:
+			is_same_card_menu_open = true
+			
+	# 先清除所有已存在的右键菜单
+	for node in active_menus:
+		node.queue_free()
+		
+	# 如果刚才右键的就是同一张卡片，则相当于“再次右键开关切换”：直接关闭并返回
+	if is_same_card_menu_open:
+		return
+
+	var menu_script := preload("res://scripts/ui/card_context_menu.gd")
+	var menu = menu_script.new()
+	_ui_layer.add_child(menu)
+	menu.setup(mname, click_pos)
+	
+	menu.action_selected.connect(func(action_type: String, target_member: String, extra_data):
+		var m = GameManager.members.get(target_member)
+		if m == null:
+			return
+			
+		match action_type:
+			"REMOVE":
+				m.is_on_board = false
+				m.division = GameManager.Division.NONE
+				m.is_leader = false
+				m.rank = 0
+				GameManager.board_changed.emit()
+			"SET_DIV":
+				var target_div: int = int(extra_data)
+				# 检查目标部门是否有首领，无首领则当首领，有首领当成员
+				var old_leader = GameManager.get_division_leader(target_div)
+				if old_leader == null:
+					m.division = target_div
+					m.is_leader = true
+					m.is_imprisoned = false
+					if m.rank == 0: m.rank = 1
+				else:
+					# 当部下成员（如果满4人挤走最后一个）
+					var existing_subs = []
+					for check_mname in GameManager.members:
+						var check_m = GameManager.members[check_mname]
+						if check_m.division == target_div and not check_m.is_leader and check_m.is_on_board and not check_m.is_imprisoned and check_m.member_name != m.member_name:
+							existing_subs.append(check_m)
+					if existing_subs.size() >= 4:
+						var evicted = existing_subs[-1]
+						evicted.division = GameManager.Division.NONE
+						evicted.rank = 0
+					m.division = target_div
+					m.is_leader = false
+					m.is_imprisoned = false
+					if m.rank == 0: m.rank = 1
+				GameManager.board_changed.emit()
+			"SET_FREE":
+				m.division = GameManager.Division.NONE
+				m.is_leader = false
+				m.is_imprisoned = false
+				m.rank = 0
+				GameManager.board_changed.emit()
+			"SET_PRISON":
+				# 保留卡片原有的部门归属 (若原本无部门则保持 NONE)
+				m.is_leader = false
+				m.is_imprisoned = true
+				m.rank = 3
+				m.prison_turns_left = 3
+				GameManager.board_changed.emit()
+	)
+
 func _on_reset_pressed():
+	_close_teaching_mode()
 	if _sandbox_wizard != null and is_instance_valid(_sandbox_wizard):
 		_sandbox_wizard.queue_free()
 		_sandbox_wizard = null
@@ -476,6 +624,7 @@ func _make_button(text: String, pos: Vector2, color: Color) -> Button:
 	return btn
 
 func _on_sandbox_pressed():
+	_close_teaching_mode()
 	if _sandbox_wizard != null and is_instance_valid(_sandbox_wizard):
 		_sandbox_wizard.queue_free()
 		_sandbox_wizard = null
@@ -497,6 +646,338 @@ func _on_sandbox_pressed():
 			_show_sandbox_confirmation_popup()
 		else:
 			_start_sandbox_wizard()
+
+func _on_tutorial_pressed():
+	if _board == null:
+		return
+		
+	# 如果已经开启了教学画板工具箱，则关闭并恢复原盘面
+	if _teaching_toolbar != null and is_instance_valid(_teaching_toolbar):
+		_close_teaching_mode()
+		GameManager.load_game_from_disk()
+		GameManager.board_changed.emit()
+		return
+		
+	# 1. 暂存当前正式/沙盒游戏进度到磁盘
+	GameManager.save_game_to_disk()
+	
+	# 2. 开启电子画板模式与卡牌抽象显示
+	_board.set_teaching_whiteboard_mode(true)
+	if not _board.slot_clicked.is_connected(_on_whiteboard_slot_clicked):
+		_board.slot_clicked.connect(_on_whiteboard_slot_clicked)
+	if not _board.cancel_tool_requested.is_connected(_on_whiteboard_cancel_tool):
+		_board.cancel_tool_requested.connect(_on_whiteboard_cancel_tool)
+	if not _board.star_scroll_requested.is_connected(_on_whiteboard_star_scroll):
+		_board.star_scroll_requested.connect(_on_whiteboard_star_scroll)
+	if not _board.middle_click_requested.is_connected(_on_whiteboard_middle_click):
+		_board.middle_click_requested.connect(_on_whiteboard_middle_click)
+	if not _board.card_right_clicked.is_connected(_on_whiteboard_card_right_clicked):
+		_board.card_right_clicked.connect(_on_whiteboard_card_right_clicked)
+	
+	# 3. 初始时清空画板上的所有卡牌（初始空白画板）并隐藏正常游戏模式下的UI按钮
+	_clear_whiteboard_cards()
+	_update_ui_state()
+	
+	var toolbar_script := preload("res://scripts/ui/teaching_toolbar_panel.gd")
+	_teaching_toolbar = toolbar_script.new()
+	_ui_layer.add_child(_teaching_toolbar)
+	
+	_teaching_toolbar.closed.connect(func():
+		_close_teaching_mode()
+		GameManager.load_game_from_disk()
+		GameManager.board_changed.emit()
+	)
+	
+	_teaching_toolbar.tool_selected.connect(func(tool_mode: String):
+		_whiteboard_line_mode = tool_mode
+		_whiteboard_line_first_member = ""
+		_board.clear_highlights()
+	)
+	
+	_teaching_toolbar.assign_division_requested.connect(func(div_id: int):
+		if _selected_whiteboard_member != "":
+			var m = GameManager.members.get(_selected_whiteboard_member)
+			if m and m.is_imprisoned: # 工具栏部门按钮仅针对在押人员生效
+				m.division = div_id
+				GameManager.board_changed.emit()
+				_update_whiteboard_selected_info(m)
+	)
+	
+	_teaching_toolbar.remove_card_requested.connect(func():
+		if _selected_whiteboard_member != "":
+			var m = GameManager.members.get(_selected_whiteboard_member)
+			if m:
+				m.is_on_board = false
+				m.division = GameManager.Division.NONE
+				_selected_whiteboard_member = ""
+				if _teaching_toolbar != null and is_instance_valid(_teaching_toolbar):
+					_teaching_toolbar.update_selected_card_info("", 0, "")
+				GameManager.board_changed.emit()
+	)
+	
+	_teaching_toolbar.clear_all_requested.connect(func():
+		_clear_whiteboard_cards()
+	)
+	
+	_teaching_toolbar.add_star_requested.connect(func():
+		if _selected_whiteboard_member != "":
+			var m = GameManager.members.get(_selected_whiteboard_member)
+			if m:
+				m.rank = clampi(m.rank + 1, 0, 3)
+				GameManager.board_changed.emit()
+				_update_whiteboard_selected_info(m)
+		else:
+			_teaching_toolbar.toggle_or_set_tool("ADD_STAR")
+	)
+	
+	_teaching_toolbar.sub_star_requested.connect(func():
+		if _selected_whiteboard_member != "":
+			var m = GameManager.members.get(_selected_whiteboard_member)
+			if m:
+				m.rank = clampi(m.rank - 1, 0, 3)
+				GameManager.board_changed.emit()
+				_update_whiteboard_selected_info(m)
+		else:
+			_teaching_toolbar.toggle_or_set_tool("SUB_STAR")
+	)
+	
+	_teaching_toolbar.toggle_reveal_requested.connect(func():
+		if _selected_whiteboard_member != "":
+			var m = GameManager.members.get(_selected_whiteboard_member)
+			if m:
+				m.is_revealed = not m.is_revealed
+				var card = _board.get_card(m.member_name)
+				if card:
+					card.update_display()
+				_update_whiteboard_selected_info(m)
+		else:
+			_teaching_toolbar.toggle_or_set_tool("TOGGLE_REVEAL")
+	)
+	
+	_teaching_toolbar.toggle_frames_requested.connect(func():
+		if _board != null and is_instance_valid(_board):
+			_board.show_teaching_frames = not _board.show_teaching_frames
+			_board.queue_redraw()
+	)
+
+func _clear_whiteboard_cards():
+	for mname in GameManager.members:
+		var m = GameManager.members[mname]
+		m.is_on_board = false
+		m.division = GameManager.Division.NONE
+		m.is_leader = false
+		m.rank = 0
+		m.is_revealed = false
+		m.is_imprisoned = false
+	GameManager.relationships.clear()
+	GameManager.prison_queue.clear()
+	GameManager.current_encounter.clear()
+	GameManager.encounter_queue.clear()
+	GameManager.safehouse_100_turns.clear()
+	for div in GameManager.ALL_DIVISIONS:
+		GameManager.intelligence[div] = 0.0
+		GameManager.intelligence_changed.emit(div, 0.0)
+	_selected_whiteboard_member = ""
+	_whiteboard_line_first_member = ""
+	if _teaching_toolbar != null and is_instance_valid(_teaching_toolbar):
+		_teaching_toolbar.update_selected_card_info("", 0, "")
+	GameManager.board_changed.emit()
+
+func _on_whiteboard_cancel_tool():
+	for node in get_tree().get_nodes_in_group("card_context_menu"):
+		node.queue_free()
+	_whiteboard_line_mode = "MOVE"
+	_whiteboard_line_first_member = ""
+	_selected_whiteboard_member = ""
+	_board.clear_highlights()
+	if _teaching_toolbar != null and is_instance_valid(_teaching_toolbar):
+		_teaching_toolbar.reset_to_move_tool()
+		_teaching_toolbar.update_selected_card_info("", 0, "")
+
+func _update_whiteboard_selected_info(m: GameManager.MemberState):
+	if _teaching_toolbar != null and is_instance_valid(_teaching_toolbar):
+		var div_str = GameManager.DIVISION_NAMES.get(m.division, "自由人") if m.division != GameManager.Division.NONE else "自由人"
+		var name_title = "首领" if m.is_leader else ("自由人" if m.division == GameManager.Division.NONE else "成员")
+		if m.is_imprisoned: name_title = "在押人员"
+		elif not m.is_revealed: name_title = "未揭示卡"
+		_teaching_toolbar.update_selected_card_info(name_title, m.rank, div_str)
+
+func _handle_whiteboard_card_clicked(member_name: String):
+	for node in get_tree().get_nodes_in_group("card_context_menu"):
+		node.queue_free()
+	var m = GameManager.members.get(member_name)
+	if m == null:
+		return
+		
+	match _whiteboard_line_mode:
+		"ADD_STAR":
+			m.rank = clampi(m.rank + 1, 0, 3)
+			var card = _board.get_card(member_name)
+			if card: card.update_display()
+			_update_whiteboard_selected_info(m)
+			return
+		"SUB_STAR":
+			m.rank = clampi(m.rank - 1, 0, 3)
+			var card = _board.get_card(member_name)
+			if card: card.update_display()
+			_update_whiteboard_selected_info(m)
+			return
+		"TOGGLE_REVEAL":
+			m.is_revealed = not m.is_revealed
+			var card = _board.get_card(member_name)
+			if card: card.update_display()
+			_update_whiteboard_selected_info(m)
+			return
+		"TRUST", "RIVALRY", "CLEAR_LINE":
+			if _whiteboard_line_first_member == "":
+				_whiteboard_line_first_member = member_name
+				_board.highlight_cards([member_name])
+			else:
+				if _whiteboard_line_first_member != member_name:
+					if _whiteboard_line_mode == "CLEAR_LINE":
+						var to_del = []
+						for r in GameManager.relationships:
+							if (r.member_a == _whiteboard_line_first_member and r.member_b == member_name) or (r.member_a == member_name and r.member_b == _whiteboard_line_first_member):
+								to_del.append(r)
+						for r in to_del:
+							GameManager.relationships.erase(r)
+						GameManager.board_changed.emit()
+					else:
+						var rel_type = GameManager.RelationType.TRUST if _whiteboard_line_mode == "TRUST" else GameManager.RelationType.RIVALRY
+						GameManager._set_relationship_type(_whiteboard_line_first_member, member_name, rel_type)
+						GameManager.board_changed.emit()
+				_whiteboard_line_first_member = ""
+				_board.clear_highlights()
+			return
+			
+	# 默认移动/选择模式
+	_selected_whiteboard_member = member_name
+	_board.highlight_cards([member_name])
+	_update_whiteboard_selected_info(m)
+
+func _on_whiteboard_slot_clicked(slot_info: Dictionary):
+	for node in get_tree().get_nodes_in_group("card_context_menu"):
+		node.queue_free()
+	var slot_type: String = slot_info.get("slot_type", "NONE")
+	var target_div: int = int(slot_info.get("division", 0))
+	
+	# 如果点击了非坑位/空白区域
+	if slot_type == "NONE":
+		_selected_whiteboard_member = ""
+		_board.clear_highlights()
+		if _teaching_toolbar != null and is_instance_valid(_teaching_toolbar):
+			_teaching_toolbar.reset_to_move_tool()
+			_teaching_toolbar.update_selected_card_info("", 0, "")
+		return
+		
+	# 1. 如果处于刷卡/放置模式（无论旧分类还是新统一分类）
+	if _whiteboard_line_mode in ["PLACE_CARD", "PLACE_LEADER", "PLACE_SUBORDINATE", "PLACE_FREE", "PLACE_PRISON", "PLACE_UNREVEALED"]:
+		_place_whiteboard_card_at_slot(slot_type, target_div)
+		return
+		
+	# 2. 如果处于选择移动模式且已选中了某张卡片（纯画板UI位移，零游戏规则干预）
+	if _selected_whiteboard_member != "" and slot_type != "NONE":
+		var m = GameManager.members.get(_selected_whiteboard_member)
+		if m:
+			match slot_type:
+				"LEADER":
+					# 挤走目标部门现有的旧首领
+					var old_leader = GameManager.get_division_leader(target_div)
+					if old_leader and old_leader.member_name != m.member_name:
+						old_leader.is_leader = false
+						old_leader.division = GameManager.Division.NONE
+						old_leader.rank = 0
+					
+					m.is_on_board = true
+					m.division = target_div
+					m.is_leader = true
+					m.is_imprisoned = false
+				"SUBORDINATE":
+					# 检查目标部门同种部下数量，满4个则挤走最后一个
+					var existing_subs = []
+					for check_mname in GameManager.members:
+						var check_m = GameManager.members[check_mname]
+						if check_m.division == target_div and not check_m.is_leader and check_m.is_on_board and not check_m.is_imprisoned and check_m.member_name != m.member_name:
+							existing_subs.append(check_m)
+					if existing_subs.size() >= 4:
+						var evicted = existing_subs[-1]
+						evicted.division = GameManager.Division.NONE
+						evicted.rank = 0
+
+					m.is_on_board = true
+					m.division = target_div
+					m.is_leader = false
+					m.is_imprisoned = false
+				"FREE":
+					m.is_on_board = true
+					m.division = GameManager.Division.NONE
+					m.is_leader = false
+					m.is_imprisoned = false
+				"PRISON":
+					m.is_on_board = true
+					m.is_imprisoned = true
+					m.is_leader = false
+					# 手动从部门移动到审讯区：保留原有的部门归属！
+					m.prison_turns_left = 3
+					
+			_selected_whiteboard_member = ""
+			_board.clear_highlights()
+			GameManager.board_changed.emit()
+
+func _place_whiteboard_card_at_slot(slot_type: String, target_div: int):
+	# 找候选未上场成员
+	var candidate: GameManager.MemberState = null
+	for mname in GameManager.MEMBER_DEFS:
+		var check_m = GameManager.members.get(mname)
+		if check_m and not check_m.is_on_board:
+			candidate = check_m
+			break
+	if candidate == null:
+		candidate = GameManager.members[GameManager.MEMBER_DEFS[0]]
+		
+	candidate.is_on_board = true
+	candidate.is_revealed = true
+	
+	match slot_type:
+		"LEADER":
+			var div = target_div if target_div != GameManager.Division.NONE else GameManager.Division.TRANSPORT
+			var old_leader = GameManager.get_division_leader(div)
+			if old_leader and old_leader.member_name != candidate.member_name:
+				old_leader.is_leader = false
+				old_leader.division = GameManager.Division.NONE
+				old_leader.rank = 0
+			candidate.division = div
+			candidate.is_leader = true
+			candidate.rank = 1 # 新放置于首领位：默认 1 星
+			candidate.is_imprisoned = false
+		"SUBORDINATE":
+			var div = target_div if target_div != GameManager.Division.NONE else GameManager.Division.TRANSPORT
+			var existing_subs = []
+			for check_mname in GameManager.members:
+				var check_m = GameManager.members[check_mname]
+				if check_m.division == div and not check_m.is_leader and check_m.is_on_board and not check_m.is_imprisoned and check_m.member_name != candidate.member_name:
+					existing_subs.append(check_m)
+			if existing_subs.size() >= 4:
+				var evicted = existing_subs[-1]
+				evicted.division = GameManager.Division.NONE
+				evicted.rank = 0
+			candidate.division = div
+			candidate.is_leader = false
+			candidate.rank = 1 # 新放置于成员位：默认 1 星
+			candidate.is_imprisoned = false
+		"PRISON":
+			candidate.division = GameManager.Division.NONE # 新放置于在押位：默认不属于任何部门
+			candidate.is_leader = false
+			candidate.rank = 3 # 新放置于在押位：默认 3 星
+			candidate.is_imprisoned = true
+			candidate.prison_turns_left = 3
+		"FREE", _:
+			candidate.division = GameManager.Division.NONE
+			candidate.is_leader = false
+			candidate.rank = 0 # 新放置于自由人位：默认 0 星
+			candidate.is_imprisoned = false
+
+	GameManager.board_changed.emit()
 
 func _show_sandbox_confirmation_popup():
 	# 创建黑色半透明背景遮罩

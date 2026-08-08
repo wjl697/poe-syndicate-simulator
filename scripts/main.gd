@@ -2,7 +2,7 @@ extends Node2D
 
 ## 主场景控制器 — 创建面板、UI层，协调遭遇流程
 
-var _board: SyndicateBoard
+var _board
 var _ui_layer: CanvasLayer
 
 # UI 组件
@@ -184,6 +184,8 @@ func _connect_board_signals():
 		_board.card_clicked.connect(_on_board_card_clicked)
 		_board.card_hovered.connect(_on_board_card_hovered)
 		_board.card_unhovered.connect(_on_board_card_unhovered)
+		if not _board.card_right_clicked.is_connected(_on_whiteboard_card_right_clicked):
+			_board.card_right_clicked.connect(_on_whiteboard_card_right_clicked)
 
 # ===== 按钮事件 =====
 func _on_encounter_pressed():
@@ -312,8 +314,8 @@ func _on_action_result(result: Dictionary):
 		_card_overlay.dismiss()
 
 func _update_ui_state():
-	var is_teaching := (_board != null and is_instance_valid(_board) and _board.is_teaching_whiteboard_mode)
-	var is_in_sandbox_wizard := (_sandbox_wizard != null and is_instance_valid(_sandbox_wizard))
+	var is_teaching: bool = (_board != null and is_instance_valid(_board) and _board.is_teaching_whiteboard_mode)
+	var is_in_sandbox_wizard: bool = (_sandbox_wizard != null and is_instance_valid(_sandbox_wizard))
 	
 	if is_teaching or is_in_sandbox_wizard:
 		if _encounter_btn: _encounter_btn.visible = false
@@ -465,16 +467,20 @@ func _on_whiteboard_middle_click():
 			_update_whiteboard_selected_info(m)
 
 func _on_whiteboard_card_right_clicked(mname: String, click_pos: Vector2):
-	# 检查当前是否已经打开了针对同一张卡片的右键菜单
+	if _board == null or not is_instance_valid(_board) or not _board.is_teaching_whiteboard_mode:
+		return
+
+	# 检查当前是否已经打开了针对同一张卡片的右键菜单 (排除即将在帧末 queue_free 的节点)
 	var active_menus = get_tree().get_nodes_in_group("card_context_menu")
 	var is_same_card_menu_open := false
 	for node in active_menus:
-		if is_instance_valid(node) and node.has_method("get_target_member") and node.get_target_member() == mname:
+		if is_instance_valid(node) and not node.is_queued_for_deletion() and node.has_method("get_target_member") and node.get_target_member() == mname:
 			is_same_card_menu_open = true
 			
 	# 先清除所有已存在的右键菜单
 	for node in active_menus:
-		node.queue_free()
+		if is_instance_valid(node) and not node.is_queued_for_deletion():
+			node.queue_free()
 		
 	# 如果刚才右键的就是同一张卡片，则相当于“再次右键开关切换”：直接关闭并返回
 	if is_same_card_menu_open:
@@ -496,6 +502,9 @@ func _on_whiteboard_card_right_clicked(mname: String, click_pos: Vector2):
 				m.division = GameManager.Division.NONE
 				m.is_leader = false
 				m.rank = 0
+				m.is_specified_member = false
+				m.specified_member_name = ""
+				m.specified_portrait_path = ""
 				GameManager.board_changed.emit()
 			"SET_DIV":
 				var target_div: int = int(extra_data)
@@ -535,6 +544,23 @@ func _on_whiteboard_card_right_clicked(mname: String, click_pos: Vector2):
 				m.rank = 3
 				m.prison_turns_left = 3
 				GameManager.board_changed.emit()
+			"RESET_TO_BLANK":
+				# 仅清除指定人物数据，卡片保留在棋盘上（还原为问号抽象状态）
+				m.is_specified_member = false
+				m.specified_member_name = ""
+				m.specified_portrait_path = ""
+				m.is_revealed = false
+				GameManager.board_changed.emit()
+			"SET_SPECIFIC_MEMBER":
+				var new_mname: String = String(extra_data)
+				var new_m = GameManager.members.get(new_mname)
+				if new_m != null:
+					# 原地覆写显示：不换 MemberState 对象，直接修改视觉字段
+					m.is_specified_member = true
+					m.specified_member_name = new_m.member_name
+					m.specified_portrait_path = new_m.portrait_path
+					m.is_revealed = true
+					GameManager.board_changed.emit()
 	)
 
 func _on_reset_pressed():
@@ -734,11 +760,9 @@ func _on_tutorial_pressed():
 		_show_mode_selection_panel()
 		return
 		
-	# 1. 尝试读入专属教学模式存档
 	GameManager.current_mode_id = "tutorial"
-	var has_save := GameManager.load_game_from_disk("tutorial")
 	
-	# 2. 开启电子画板模式与卡牌抽象显示
+	# 1. 优先开启电子画板模式与卡牌抽象显示，确保读档/排版时 is_abstract_mode 状态 100% 正确
 	_board.set_teaching_whiteboard_mode(true)
 	if not _board.slot_clicked.is_connected(_on_whiteboard_slot_clicked):
 		_board.slot_clicked.connect(_on_whiteboard_slot_clicked)
@@ -750,6 +774,9 @@ func _on_tutorial_pressed():
 		_board.middle_click_requested.connect(_on_whiteboard_middle_click)
 	if not _board.card_right_clicked.is_connected(_on_whiteboard_card_right_clicked):
 		_board.card_right_clicked.connect(_on_whiteboard_card_right_clicked)
+		
+	# 2. 尝试读入专属教学模式存档
+	var has_save := GameManager.load_game_from_disk("tutorial")
 	
 	# 3. 首次开启才清空，有存档则恢复画板盘面
 	if not has_save:
@@ -792,6 +819,12 @@ func _on_tutorial_pressed():
 			if m:
 				m.is_on_board = false
 				m.division = GameManager.Division.NONE
+				m.is_leader = false
+				m.rank = 0
+				m.is_imprisoned = false
+				m.is_specified_member = false
+				m.specified_member_name = ""
+				m.specified_portrait_path = ""
 				_selected_whiteboard_member = ""
 				if _teaching_toolbar != null and is_instance_valid(_teaching_toolbar):
 					_teaching_toolbar.update_selected_card_info("", 0, "")
@@ -857,6 +890,9 @@ func _clear_whiteboard_cards():
 		m.rank = 0
 		m.is_revealed = false
 		m.is_imprisoned = false
+		m.is_specified_member = false
+		m.specified_member_name = ""
+		m.specified_portrait_path = ""
 	GameManager.relationships.clear()
 	GameManager.prison_queue.clear()
 	GameManager.current_encounter.clear()
@@ -1001,6 +1037,7 @@ func _on_whiteboard_slot_clicked(slot_info: Dictionary):
 					m.division = GameManager.Division.NONE
 					m.is_leader = false
 					m.is_imprisoned = false
+					m.rank = 0
 				"PRISON":
 					m.is_on_board = true
 					m.is_imprisoned = true
@@ -1021,10 +1058,13 @@ func _place_whiteboard_card_at_slot(slot_type: String, target_div: int):
 			candidate = check_m
 			break
 	if candidate == null:
-		candidate = GameManager.members[GameManager.MEMBER_DEFS[0]]
+		return
 		
 	candidate.is_on_board = true
 	candidate.is_revealed = true
+	candidate.is_specified_member = false
+	candidate.specified_member_name = ""
+	candidate.specified_portrait_path = ""
 	
 	match slot_type:
 		"LEADER":

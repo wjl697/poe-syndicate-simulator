@@ -87,6 +87,9 @@ class MemberState:
 	var cached_bargain_effect: int = -1  # 预先Roll好的商谈结果
 	var cached_bargain_target: String = "" # 预先Roll好的商谈目标
 	var is_revealed: bool = false
+	var is_specified_member: bool = false       # 教学模式下是否指定了特定人物
+	var specified_member_name: String = ""      # 指定人物的显示名（覆写显示，不换数据）
+	var specified_portrait_path: String = ""    # 指定人物的头像路径
 	var equipment_count: int = 0            # 辛迪加装备(上限3)
 	var prison_intel_division: int = 0      # 关押期间情报贡献去向部门 (Division.NONE=0)
 	var has_pending_prison_penalty: bool = false # 延迟执行的出狱降星惩罚
@@ -109,6 +112,9 @@ class MemberState:
 		c.cached_bargain_effect = cached_bargain_effect
 		c.cached_bargain_target = cached_bargain_target
 		c.is_revealed = is_revealed
+		c.is_specified_member = is_specified_member
+		c.specified_member_name = specified_member_name
+		c.specified_portrait_path = specified_portrait_path
 		c.equipment_count = equipment_count
 		c.prison_intel_division = prison_intel_division
 		c.has_pending_prison_penalty = has_pending_prison_penalty
@@ -130,6 +136,9 @@ class MemberState:
 			"cached_bargain_effect": cached_bargain_effect,
 			"cached_bargain_target": cached_bargain_target,
 			"is_revealed": is_revealed,
+			"is_specified_member": is_specified_member,
+			"specified_member_name": specified_member_name,
+			"specified_portrait_path": specified_portrait_path,
 			"equipment_count": equipment_count,
 			"prison_intel_division": prison_intel_division,
 			"has_pending_prison_penalty": has_pending_prison_penalty
@@ -153,6 +162,9 @@ class MemberState:
 		cached_bargain_effect = int(d.get("cached_bargain_effect", -1))
 		cached_bargain_target = d.get("cached_bargain_target", "")
 		is_revealed = bool(d.get("is_revealed", false))
+		is_specified_member = bool(d.get("is_specified_member", false))
+		specified_member_name = str(d.get("specified_member_name", ""))
+		specified_portrait_path = str(d.get("specified_portrait_path", ""))
 		equipment_count = int(d.get("equipment_count", 0))
 		prison_intel_division = int(d.get("prison_intel_division", 0))
 		has_pending_prison_penalty = bool(d.get("has_pending_prison_penalty", false))
@@ -242,6 +254,7 @@ func _assign_members_randomly():
 		m.division = Division.NONE
 		m.is_leader = false
 		m.is_revealed = false
+		m.rank = 0
 
 	# 打乱上场池
 	active_pool.shuffle()

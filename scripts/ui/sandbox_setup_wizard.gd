@@ -1256,8 +1256,8 @@ func _show_card_editor_overlay(mname: String, screen_pos: Vector2) -> void:
 	# 2. 卡牌光晕 (与 member_card.gd 保持一致的缩放与 Y 轴偏移比例)
 	var card_halo_sprite := Sprite2D.new()
 	card_halo_sprite.texture = tex_halo_lead if m.is_leader else tex_halo_mem
-	card_halo_sprite.position = card_bg_sprite.position + Vector2(0, tex_card_bg.get_size().y * auto_scale_f * MemberCard.HALO_Y_OFFSET_RATIO)
-	card_halo_sprite.scale = card_scale * MemberCard.HALO_SCALE_MULT
+	card_halo_sprite.position = card_bg_sprite.position + Vector2(0, tex_card_bg.get_size().y * auto_scale_f * -0.02)
+	card_halo_sprite.scale = card_scale * 1.15
 	backdrop.add_child(card_halo_sprite)
 	
 	# 3. 头像 (与 member_card.gd 保持一致的缩放与 Y 轴偏移比例)
@@ -1267,9 +1267,9 @@ func _show_card_editor_overlay(mname: String, screen_pos: Vector2) -> void:
 		portrait_sprite.texture = ptex
 		var bg_size := tex_card_bg.get_size() * auto_scale_f
 		var p_size: Vector2 = ptex.get_size()
-		var fit: float = minf(bg_size.x * MemberCard.PORTRAIT_FIT_SCALE / p_size.x, bg_size.y * MemberCard.PORTRAIT_FIT_SCALE / p_size.y)
+		var fit: float = minf(bg_size.x * 1.0 / p_size.x, bg_size.y * 1.0 / p_size.y)
 		portrait_sprite.scale = Vector2(fit, fit)
-	portrait_sprite.position = card_bg_sprite.position + Vector2(0, tex_card_bg.get_size().y * auto_scale_f * MemberCard.PORTRAIT_Y_OFFSET_RATIO)
+	portrait_sprite.position = card_bg_sprite.position + Vector2(0, tex_card_bg.get_size().y * auto_scale_f * -0.04)
 	backdrop.add_child(portrait_sprite)
 	
 	# 4. 部门标志 (左上角角标)
@@ -1284,8 +1284,8 @@ func _show_card_editor_overlay(mname: String, screen_pos: Vector2) -> void:
 		var div_sprite := Sprite2D.new()
 		div_sprite.texture = load(div_icon_path)
 		div_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		div_sprite.position = card_bg_sprite.position + MemberCard.BADGE_BASE_POS * auto_scale_f
-		div_sprite.scale = Vector2(MemberCard.BADGE_BASE_SCALE, MemberCard.BADGE_BASE_SCALE) * auto_scale_f
+		div_sprite.position = card_bg_sprite.position + Vector2(-125, -145) * auto_scale_f
+		div_sprite.scale = Vector2(0.8, 0.8) * auto_scale_f
 		div_sprite.modulate.a = 0.8
 		backdrop.add_child(div_sprite)
 		
@@ -1300,8 +1300,8 @@ func _show_card_editor_overlay(mname: String, screen_pos: Vector2) -> void:
 		var rank_sprite := Sprite2D.new()
 		rank_sprite.texture = load(rank_icon_path)
 		rank_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS
-		rank_sprite.position = card_bg_sprite.position + MemberCard.STAR_BASE_POS * auto_scale_f
-		rank_sprite.scale = Vector2(MemberCard.STAR_BASE_SCALE, MemberCard.STAR_BASE_SCALE) * auto_scale_f
+		rank_sprite.position = card_bg_sprite.position + Vector2(160, -130) * auto_scale_f
+		rank_sprite.scale = Vector2(1.2, 1.2) * auto_scale_f
 		if m.rank == 3:
 			rank_sprite.position += Vector2(-22, -18) * auto_scale_f
 		rank_sprite.modulate.a = 0.8

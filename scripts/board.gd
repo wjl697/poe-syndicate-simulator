@@ -247,18 +247,23 @@ func _update_guard_rects_state():
 	# 重新布局
 	_layout_cards()
 
+func _instantiate_card(mname: String, member_state: GameManager.MemberState) -> MemberCard:
+	var card := MemberCard.new()
+	card.scale = Vector2(CARD_SCALE, CARD_SCALE)
+	card.setup(member_state)
+	card.card_clicked.connect(_on_card_click)
+	card.card_right_clicked.connect(func(target_name: String, click_pos: Vector2): card_right_clicked.emit(target_name, click_pos))
+	card.card_hovered.connect(_on_card_hover.bind(mname))
+	card.card_unhovered.connect(_on_card_unhover)
+	return card
+
 # ===== 创建所有成员卡片 =====
 func _create_cards():
 	for mname in GameManager.members:
 		var member_state = GameManager.members[mname]
 		if not member_state.is_on_board:
 			continue  # 不在场的成员不创建卡片
-		var card := MemberCard.new()
-		card.scale = Vector2(CARD_SCALE, CARD_SCALE)
-		card.setup(member_state)
-		card.card_clicked.connect(_on_card_click)
-		card.card_hovered.connect(_on_card_hover.bind(mname))
-		card.card_unhovered.connect(_on_card_unhover)
+		var card := _instantiate_card(mname, member_state)
 		add_child(card)
 		_cards[mname] = card
 
@@ -550,13 +555,7 @@ func _on_board_changed():
 	for mname in GameManager.members:
 		var m = GameManager.members[mname]
 		if m.is_on_board and not _cards.has(mname):
-			var card := MemberCard.new()
-			card.scale = Vector2(CARD_SCALE, CARD_SCALE)
-			card.setup(m)
-			card.card_clicked.connect(_on_card_click)
-			card.card_right_clicked.connect(func(mname: String, click_pos: Vector2): card_right_clicked.emit(mname, click_pos))
-			card.card_hovered.connect(_on_card_hover.bind(mname))
-			card.card_unhovered.connect(_on_card_unhover)
+			var card := _instantiate_card(mname, m)
 			# 初始坐标处理：如果有沙盒向导且处于第二步骤，则把起点设为底部坞中卡片的屏幕位置
 			var start_pos := FREE_CENTER
 			var wizards = get_tree().get_nodes_in_group("sandbox_wizard")

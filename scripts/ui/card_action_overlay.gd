@@ -114,8 +114,8 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 	# 光晕 (与 member_card.gd 保持一致的缩放与 Y 轴偏移比例)
 	_card_halo = Sprite2D.new()
 	_card_halo.texture = _tex_halo_lead if member.is_leader else _tex_halo_mem
-	_card_halo.position = _card_bg.position + Vector2(0, _tex_bg.get_size().y * auto_scale_f * MemberCard.HALO_Y_OFFSET_RATIO)
-	_card_halo.scale = card_scale * MemberCard.HALO_SCALE_MULT
+	_card_halo.position = _card_bg.position + Vector2(0, _tex_bg.get_size().y * auto_scale_f * -0.02)
+	_card_halo.scale = card_scale * 1.15
 	_card_container.add_child(_card_halo)
 
 	# 头像 (与 member_card.gd 保持一致的缩放与 Y 轴偏移比例)
@@ -125,9 +125,9 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 		_portrait.texture = ptex
 		var bg_size := _tex_bg.get_size() * auto_scale_f
 		var p_size: Vector2 = ptex.get_size()
-		var fit: float = minf(bg_size.x * MemberCard.PORTRAIT_FIT_SCALE / p_size.x, bg_size.y * MemberCard.PORTRAIT_FIT_SCALE / p_size.y)
+		var fit: float = minf(bg_size.x * 1.0 / p_size.x, bg_size.y * 1.0 / p_size.y)
 		_portrait.scale = Vector2(fit, fit)
-	_portrait.position = _card_bg.position + Vector2(0, _tex_bg.get_size().y * auto_scale_f * MemberCard.PORTRAIT_Y_OFFSET_RATIO)
+	_portrait.position = _card_bg.position + Vector2(0, _tex_bg.get_size().y * auto_scale_f * -0.04)
 	_card_container.add_child(_portrait)
 
 	# --- 新增：部门标志 (左上角) ---
@@ -142,8 +142,8 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 		var div_sprite := Sprite2D.new()
 		div_sprite.texture = load(div_icon_path)
 		div_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS  # 缩小时抗锯齿
-		div_sprite.position = _card_bg.position + MemberCard.BADGE_BASE_POS * auto_scale_f
-		div_sprite.scale = Vector2(MemberCard.BADGE_BASE_SCALE, MemberCard.BADGE_BASE_SCALE) * auto_scale_f
+		div_sprite.position = _card_bg.position + Vector2(-125, -145) * auto_scale_f
+		div_sprite.scale = Vector2(0.8, 0.8) * auto_scale_f
 		div_sprite.modulate.a = 0.8
 		_card_container.add_child(div_sprite)
 
@@ -158,8 +158,8 @@ func show_member_actions(member, actions: Array, screen_pos: Vector2):
 		var rank_sprite := Sprite2D.new()
 		rank_sprite.texture = load(rank_icon_path)
 		rank_sprite.texture_filter = CanvasItem.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS  # 缩小时抗锯齿
-		rank_sprite.position = _card_bg.position + MemberCard.STAR_BASE_POS * auto_scale_f
-		rank_sprite.scale = Vector2(MemberCard.STAR_BASE_SCALE, MemberCard.STAR_BASE_SCALE) * auto_scale_f
+		rank_sprite.position = _card_bg.position + Vector2(160, -130) * auto_scale_f
+		rank_sprite.scale = Vector2(1.2, 1.2) * auto_scale_f
 		
 		# 为三星图标单独向左上微调，注意带上全局卡片缩放系数(auto_scale_f)
 		if member.rank == 3:

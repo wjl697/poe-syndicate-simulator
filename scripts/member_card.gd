@@ -278,8 +278,8 @@ func update_display() -> void:
 	bg_sprite.visible = true
 
 	# 头像与问号
-	if is_abstract_mode:
-		# 电子画板抽象模式：未揭示卡片（无论位于部门还是自由人位置）均显示问号
+	if is_abstract_mode and not member_data.is_specified_member:
+		# 教学模式默认抽象卡（未指定人物）：未揭示显示问号，揭示隐藏头像
 		if not member_data.is_revealed:
 			portrait_sprite.visible = true
 			portrait_sprite.texture = _tex_question
@@ -294,9 +294,10 @@ func update_display() -> void:
 		portrait_sprite.scale = Vector2.ONE
 		portrait_sprite.position = Vector2.ZERO
 	else:
-		# 揭示状态：显示真实头像（451x450，需要缩放）
+		# 揭示状态 / 教学模式指定人物卡：原地显示指定头像，不触发卡片重建
 		portrait_sprite.visible = true
-		var ptex = load(member_data.portrait_path)
+		var portrait_path_to_use: String = member_data.specified_portrait_path if member_data.is_specified_member else member_data.portrait_path
+		var ptex = load(portrait_path_to_use) if portrait_path_to_use != "" else null
 		if ptex:
 			portrait_sprite.texture = ptex
 			if bg_sprite.texture:
@@ -343,8 +344,8 @@ func update_display() -> void:
 			badge_sprite.position = BADGE_BASE_POS
 			badge_sprite.modulate.a = 0.8
 
-	# 名称 — 区分电子画板抽象模式与正常游戏模式
-	if is_abstract_mode:
+	# 名称 — 区分电子画板抽象模式与正常游戏模式/指定特定人物卡
+	if is_abstract_mode and not member_data.is_specified_member:
 		if not member_data.is_revealed:
 			name_label.text = "未揭示"
 			# 未揭示卡：文字置于问号下方，避免重叠遮挡
@@ -368,13 +369,21 @@ func update_display() -> void:
 			name_label.add_theme_font_size_override("font_size", 54)
 			name_label.add_theme_color_override("font_color", Color8(25, 20, 15))
 	elif is_hidden:
-		name_label.text = ""
+		name_label.text = "未揭示"
+		name_label.position = Vector2(-200, 85)
+		name_label.size = Vector2(400, 70)
+		name_label.add_theme_font_size_override("font_size", 40)
+		name_label.add_theme_color_override("font_color", Color8(25, 20, 15))
+	elif is_abstract_mode and member_data.is_specified_member:
+		# 教学模式指定人物卡：名字位置和大小与正常模式完全一致
+		name_label.text = member_data.specified_member_name
 		if bg_sprite.texture:
 			name_label.position = Vector2(-bg_size.x * 0.4, bg_size.y * 0.2)
 			name_label.size = Vector2(bg_size.x * 0.8, 60)
 			name_label.add_theme_font_size_override("font_size", 48)
 			name_label.add_theme_color_override("font_color", Color(0, 0, 0))
 	else:
+		# 正常游戏模式已揭示：完全还原原始定位，不受教学模式改动影响
 		name_label.text = member_data.member_name
 		if bg_sprite.texture:
 			name_label.position = Vector2(-bg_size.x * 0.4, bg_size.y * 0.2)
@@ -408,8 +417,8 @@ func update_display() -> void:
 		prison_turn_badge.visible = false
 		prison_turn_label.visible = false
 
-	# 部门情报进度条更新逻辑（仅部门首领显示，未翻开时也可见）
-	if member_data.is_leader and member_data.division != GameManager.Division.NONE:
+	# 部门情报进度条更新逻辑（仅部门首领在非教学模式显示）
+	if not is_abstract_mode and member_data.is_leader and member_data.division != GameManager.Division.NONE:
 		var raw_val: float = GameManager.intelligence.get(member_data.division, 0.0)
 		var percent: float = raw_val if raw_val <= 1.0 else (raw_val / 100.0)
 		var percent_int: int = int(round(percent * 100.0))
@@ -571,35 +580,37 @@ func _on_control_gui_input(event: InputEvent) -> void:
 	if event is InputEventMouseMotion:
 		_update_progress_tooltip(event.position)
 
-	if is_abstract_mode and event is InputEventMouseButton and event.pressed:
-		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			if member_data:
-				member_data.rank = clampi(member_data.rank + 1, 0, 3)
-				update_display()
-				get_viewport().set_input_as_handled()
-				return
-		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			if member_data:
-				member_data.rank = clampi(member_data.rank - 1, 0, 3)
-				update_display()
-				get_viewport().set_input_as_handled()
-				return
-		elif event.button_index == MOUSE_BUTTON_MIDDLE:
-			if member_data:
-				member_data.is_revealed = not member_data.is_revealed
-				update_display()
-				get_viewport().set_input_as_handled()
-				return
-		elif event.button_index == MOUSE_BUTTON_RIGHT:
-			if member_data:
-				var screen_center = get_global_transform_with_canvas().origin
-				card_right_clicked.emit(member_data.member_name, screen_center)
+	if event is InputEventMouseButton and event.pressed:
+		if event.button_index == MOUSE_BUTTON_RIGHT:
+			if is_abstract_mode and member_data:
+				var click_pos = event.global_position
+				card_right_clicked.emit(member_data.member_name, click_pos)
 				get_viewport().set_input_as_handled()
 				return
 
-	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-		if member_data:
-			card_clicked.emit(member_data.member_name)
+		if is_abstract_mode:
+			if event.button_index == MOUSE_BUTTON_WHEEL_UP:
+				if member_data:
+					member_data.rank = clampi(member_data.rank + 1, 0, 3)
+					update_display()
+					get_viewport().set_input_as_handled()
+					return
+			elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
+				if member_data:
+					member_data.rank = clampi(member_data.rank - 1, 0, 3)
+					update_display()
+					get_viewport().set_input_as_handled()
+					return
+			elif event.button_index == MOUSE_BUTTON_MIDDLE:
+				if member_data:
+					member_data.is_revealed = not member_data.is_revealed
+					update_display()
+					get_viewport().set_input_as_handled()
+					return
+
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			if member_data:
+				card_clicked.emit(member_data.member_name)
 
 func _on_mouse_entered() -> void:
 	if member_data:

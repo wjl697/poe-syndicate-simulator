@@ -630,6 +630,9 @@ func _set_game_content_visible(v: bool):
 		var hud = _ui_layer.get_node_or_null("HUD")
 		if is_instance_valid(hud):
 			hud.visible = v
+	var bg_canvas = get_node_or_null("BackgroundCanvas")
+	if is_instance_valid(bg_canvas):
+		bg_canvas.visible = v
 
 var _is_mode_active: bool = false
 

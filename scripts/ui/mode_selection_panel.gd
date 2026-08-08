@@ -11,12 +11,94 @@ var _tex_btn := preload("res://辛迪加素材/界面UI/按钮.png")
 
 var _center_container: CenterContainer
 
+var _tex_logo := preload("res://辛迪加素材/人员/格拉维奇.png")
+
+static var has_shown_logo_splash: bool = false
+
 func _ready():
 	set_anchors_preset(Control.PRESET_FULL_RECT)
 	mouse_filter = Control.MOUSE_FILTER_STOP
 	_update_panel_layout()
 	get_viewport().size_changed.connect(_update_panel_layout)
 	_build_ui()
+
+	# 品牌 Logo 仅在游戏启动时展示一次，后续中途切回模式选择大厅时直接呈现大厅
+	if not ModeSelectionPanel.has_shown_logo_splash:
+		ModeSelectionPanel.has_shown_logo_splash = true
+		_play_logo_splash_animation()
+
+func _play_logo_splash_animation():
+	var splash_layer := Control.new()
+	splash_layer.set_anchors_preset(Control.PRESET_FULL_RECT)
+	splash_layer.custom_minimum_size = get_viewport_rect().size
+	splash_layer.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(splash_layer)
+
+	var bg_black := ColorRect.new()
+	bg_black.color = Color(0, 0, 0, 1.0) # 绝对纯黑，与启动黑屏 100% 保持一致无色差
+	bg_black.set_anchors_preset(Control.PRESET_FULL_RECT)
+	splash_layer.add_child(bg_black)
+
+	var center_container := CenterContainer.new()
+	center_container.set_anchors_preset(Control.PRESET_FULL_RECT)
+	center_container.custom_minimum_size = get_viewport_rect().size
+	splash_layer.add_child(center_container)
+
+	var center_box := VBoxContainer.new()
+	center_box.alignment = BoxContainer.ALIGNMENT_CENTER
+	center_box.add_theme_constant_override("separation", 16)
+	center_container.add_child(center_box)
+
+	# 1. LOGO 品牌图片
+	var logo_rect := TextureRect.new()
+	logo_rect.texture = _tex_logo
+	logo_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	logo_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	logo_rect.custom_minimum_size = Vector2(160, 160)
+	logo_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	center_box.add_child(logo_rect)
+
+	# 2. 工作室品牌名称与字幕
+	var studio_title := Label.new()
+	studio_title.text = "SYNDICATE STUDIO"
+	studio_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	studio_title.add_theme_font_size_override("font_size", 24)
+	studio_title.add_theme_color_override("font_color", Color(0.95, 0.85, 0.5))
+	studio_title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	studio_title.add_theme_constant_override("shadow_offset_x", 2)
+	studio_title.add_theme_constant_override("shadow_offset_y", 2)
+	center_box.add_child(studio_title)
+
+	var studio_sub := Label.new()
+	studio_sub.text = "P R E S E N T S"
+	studio_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	studio_sub.add_theme_font_size_override("font_size", 14)
+	studio_sub.add_theme_color_override("font_color", Color(0.7, 0.75, 0.85))
+	center_box.add_child(studio_sub)
+
+	# 纯黑背景 (#000000) 100% 保持无色差；Logo 内容从纯黑背景中淡入与淡出
+	splash_layer.modulate.a = 1.0
+	center_box.modulate.a = 0.0 # Logo 品牌图文初始完全透明
+
+	var tween := create_tween()
+	tween.set_trans(Tween.TRANS_QUAD)
+	tween.set_ease(Tween.EASE_OUT)
+	# 阶段 1：Logo 品牌图文从纯黑背景中平滑淡入 (0.6 秒)
+	tween.tween_property(center_box, "modulate:a", 1.0, 0.6)
+	# 阶段 2：品牌 Logo 停顿展示 (2.0 秒)
+	tween.tween_interval(2.0)
+	# 阶段 3：Logo 品牌图文平滑淡出回纯黑背景 (0.6 秒)
+	tween.tween_property(center_box, "modulate:a", 0.0, 0.6)
+	# 阶段 4：纯黑背景层平滑淡出 (0.4 秒) 揭开模式选择大厅
+	tween.tween_property(splash_layer, "modulate:a", 0.0, 0.4)
+	tween.tween_callback(splash_layer.queue_free)
+
+	# 点击跳过
+	splash_layer.gui_input.connect(func(ev: InputEvent):
+		if ev is InputEventMouseButton and ev.pressed:
+			tween.kill()
+			splash_layer.queue_free()
+	)
 
 func _update_panel_layout():
 	var vp_size := get_viewport_rect().size

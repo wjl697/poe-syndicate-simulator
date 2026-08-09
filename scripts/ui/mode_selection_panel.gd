@@ -11,7 +11,9 @@ var _tex_btn := preload("res://辛迪加素材/界面UI/按钮.png")
 
 var _center_container: CenterContainer
 
-var _tex_logo := preload("res://辛迪加素材/人员/格拉维奇.png")
+var _tex_logo := preload("res://辛迪加素材/界面UI/加载图标.png")
+var _font_noto := preload("res://辛迪加素材/字体/NotoSansSC-VariableFont_wght.ttf")
+var _tex_subtitle := preload("res://辛迪加素材/界面UI/界面副标题.png")
 
 static var has_shown_logo_splash: bool = false
 
@@ -49,32 +51,23 @@ func _play_logo_splash_animation():
 	center_box.add_theme_constant_override("separation", 16)
 	center_container.add_child(center_box)
 
-	# 1. LOGO 品牌图片
+	# 1. LOGO 品牌图片（加载图标.png）
 	var logo_rect := TextureRect.new()
 	logo_rect.texture = _tex_logo
 	logo_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	logo_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	logo_rect.custom_minimum_size = Vector2(160, 160)
+	logo_rect.custom_minimum_size = Vector2(80, 80)
 	logo_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	center_box.add_child(logo_rect)
 
-	# 2. 工作室品牌名称与字幕
-	var studio_title := Label.new()
-	studio_title.text = "SYNDICATE STUDIO"
-	studio_title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	studio_title.add_theme_font_size_override("font_size", 24)
-	studio_title.add_theme_color_override("font_color", Color(0.95, 0.85, 0.5))
-	studio_title.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
-	studio_title.add_theme_constant_override("shadow_offset_x", 2)
-	studio_title.add_theme_constant_override("shadow_offset_y", 2)
-	center_box.add_child(studio_title)
-
-	var studio_sub := Label.new()
-	studio_sub.text = "P R E S E N T S"
-	studio_sub.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	studio_sub.add_theme_font_size_override("font_size", 14)
-	studio_sub.add_theme_color_override("font_color", Color(0.7, 0.75, 0.85))
-	center_box.add_child(studio_sub)
+	# 2. 界面副标题图片
+	var subtitle_rect := TextureRect.new()
+	subtitle_rect.texture = _tex_subtitle
+	subtitle_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	subtitle_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	subtitle_rect.custom_minimum_size = Vector2(251, 63)
+	subtitle_rect.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	center_box.add_child(subtitle_rect)
 
 	# 纯黑背景 (#000000) 100% 保持无色差；Logo 内容从纯黑背景中淡入与淡出
 	splash_layer.modulate.a = 1.0
@@ -189,8 +182,8 @@ func _build_ui():
 ## 创建单个模式卡片（符合底板木框的精美居中比例）
 func _create_mode_card(data: Dictionary) -> Control:
 	var container := PanelContainer.new()
-	container.custom_minimum_size = Vector2(290, 370)
-	container.pivot_offset = Vector2(145, 185)
+	container.custom_minimum_size = Vector2(245, 315)
+	container.pivot_offset = Vector2(122.5, 157.5)
 
 	# 黑色半透明质感 StyleBox
 	var box_style := StyleBoxFlat.new()
@@ -250,7 +243,7 @@ func _create_mode_card(data: Dictionary) -> Control:
 	desc_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	desc_lbl.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	desc_lbl.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	desc_lbl.custom_minimum_size = Vector2(250, 140)
+	desc_lbl.custom_minimum_size = Vector2(205, 110)
 	desc_lbl.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	desc_lbl.add_theme_font_size_override("font_size", 15)
 	desc_lbl.add_theme_color_override("font_color", Color(0.92, 0.92, 0.95))
@@ -262,7 +255,7 @@ func _create_mode_card(data: Dictionary) -> Control:
 	# 模式选择按钮 (使用 按钮.png 纹理)
 	var btn := Button.new()
 	btn.text = data["title"]
-	btn.custom_minimum_size = Vector2(250, 56)
+	btn.custom_minimum_size = Vector2(205, 48)
 	btn.add_theme_font_size_override("font_size", 20)
 	btn.add_theme_color_override("font_color", Color(1.0, 0.95, 0.8))
 	btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0))

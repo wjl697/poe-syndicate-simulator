@@ -72,6 +72,7 @@ var step2_temp_return_prison_members: bool = false
 
 
 signal slot_clicked(slot_info: Dictionary)
+signal slot_double_clicked(slot_info: Dictionary)
 
 # ===== 子节点 =====
 var _cards: Dictionary = {}           # member_name -> MemberCard
@@ -682,7 +683,10 @@ func _unhandled_input(event: InputEvent):
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			var local_pos = to_local(get_global_mouse_position())
 			var info = get_slot_at_position(local_pos)
-			slot_clicked.emit(info)
+			if event.double_click:
+				slot_double_clicked.emit(info)
+			else:
+				slot_clicked.emit(info)
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			cancel_tool_requested.emit()
 		elif event.button_index == MOUSE_BUTTON_MIDDLE:

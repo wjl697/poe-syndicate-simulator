@@ -432,6 +432,8 @@ func _close_teaching_mode():
 	if _board != null and is_instance_valid(_board):
 		if _board.slot_clicked.is_connected(_on_whiteboard_slot_clicked):
 			_board.slot_clicked.disconnect(_on_whiteboard_slot_clicked)
+		if _board.slot_double_clicked.is_connected(_on_whiteboard_slot_double_clicked):
+			_board.slot_double_clicked.disconnect(_on_whiteboard_slot_double_clicked)
 		if _board.cancel_tool_requested.is_connected(_on_whiteboard_cancel_tool):
 			_board.cancel_tool_requested.disconnect(_on_whiteboard_cancel_tool)
 		if _board.star_scroll_requested.is_connected(_on_whiteboard_star_scroll):
@@ -766,6 +768,8 @@ func _on_tutorial_pressed():
 	_board.set_teaching_whiteboard_mode(true)
 	if not _board.slot_clicked.is_connected(_on_whiteboard_slot_clicked):
 		_board.slot_clicked.connect(_on_whiteboard_slot_clicked)
+	if not _board.slot_double_clicked.is_connected(_on_whiteboard_slot_double_clicked):
+		_board.slot_double_clicked.connect(_on_whiteboard_slot_double_clicked)
 	if not _board.cancel_tool_requested.is_connected(_on_whiteboard_cancel_tool):
 		_board.cancel_tool_requested.connect(_on_whiteboard_cancel_tool)
 	if not _board.star_scroll_requested.is_connected(_on_whiteboard_star_scroll):
@@ -978,6 +982,18 @@ func _handle_whiteboard_card_clicked(member_name: String):
 	_selected_whiteboard_member = member_name
 	_board.highlight_cards([member_name])
 	_update_whiteboard_selected_info(m)
+
+func _on_whiteboard_slot_double_clicked(slot_info: Dictionary):
+	for node in get_tree().get_nodes_in_group("card_context_menu"):
+		node.queue_free()
+	var slot_type: String = slot_info.get("slot_type", "NONE")
+	var target_div: int = int(slot_info.get("division", 0))
+	
+	if slot_type != "NONE":
+		_selected_whiteboard_member = ""
+		_board.clear_highlights()
+		_place_whiteboard_card_at_slot(slot_type, target_div)
+		GameManager.save_game_to_disk("tutorial")
 
 func _on_whiteboard_slot_clicked(slot_info: Dictionary):
 	for node in get_tree().get_nodes_in_group("card_context_menu"):

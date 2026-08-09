@@ -369,11 +369,8 @@ func update_display() -> void:
 			name_label.add_theme_font_size_override("font_size", 54)
 			name_label.add_theme_color_override("font_color", Color8(25, 20, 15))
 	elif is_hidden:
-		name_label.text = "未揭示"
-		name_label.position = Vector2(-200, 85)
-		name_label.size = Vector2(400, 70)
-		name_label.add_theme_font_size_override("font_size", 40)
-		name_label.add_theme_color_override("font_color", Color8(25, 20, 15))
+		# 正常游戏模式未揭示：无下方文字提示，仅中央大问号
+		name_label.text = ""
 	elif is_abstract_mode and member_data.is_specified_member:
 		# 教学模式指定人物卡：名字位置和大小与正常模式完全一致
 		name_label.text = member_data.specified_member_name

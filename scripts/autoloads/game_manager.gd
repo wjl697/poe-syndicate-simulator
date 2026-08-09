@@ -237,11 +237,15 @@ func initialize_game():
 # ===== 初始化辅助 =====
 func _assign_members_randomly():
 	var pool: Array = MEMBER_DEFS.duplicate()
+	# 规则：格拉维奇不会在首轮14张卡中出现，必须存在于替补席（bench_pool）中，通过驱逐其他成员才能引入
+	pool.erase("格拉维奇")
 	pool.shuffle()
 
-	# 从17人中选14人上场
+	# 从剩余16人中选14人上场
 	var active_pool: Array = pool.slice(0, ACTIVE_MEMBER_COUNT)
 	var bench_list: Array = pool.slice(ACTIVE_MEMBER_COUNT)
+	bench_list.append("格拉维奇")
+	bench_list.shuffle()
 
 	bench_pool.clear()
 	for mname in bench_list:
@@ -727,15 +731,18 @@ func _generate_single_encounter(div: int, used_members: Dictionary = {}) -> Dict
 
 	var leader_eligible := false
 	if leader != null and not leader.is_imprisoned and leader.is_on_board and not leader.member_name in used_members:
-		if not has_unrevealed:
-			var has_rel = get_relationship_between(primary_name, leader.member_name) != null
-			var total_ranks := 0
-			for check_mname in members:
-				var check_m: MemberState = members[check_mname]
-				if check_m.division == div and check_m.is_on_board and not check_m.is_imprisoned:
-					total_ranks += check_m.rank
-			if has_rel or total_ranks >= 3:
-				leader_eligible = true
+		var has_rel = get_relationship_between(primary_name, leader.member_name) != null
+		var total_subordinate_ranks := 0
+		for check_mname in members:
+			var check_m: MemberState = members[check_mname]
+			if check_m.division == div and not check_m.is_leader and check_m.is_on_board:
+				var m_rank := check_m.rank
+				if not check_m.is_revealed:
+					m_rank = maxi(m_rank, 1)
+				total_subordinate_ranks += m_rank
+		if has_rel or total_subordinate_ranks >= 3:
+			leader_eligible = true
+		print("[遭遇生成] 部门 ", DIVISION_NAMES.get(div, str(div)), " 首领参战合规判定: eligible=", leader_eligible, " (含在押/未揭示下属总星级=", total_subordinate_ranks, ", 有红/绿线关系=", has_rel, ")")
 
 	# 3. 首领第一通道（VIP 判定）
 	var leader_deployed_via_vip := false

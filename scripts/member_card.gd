@@ -456,11 +456,28 @@ func update_display() -> void:
 				
 				# 设定固定字号（当前为您手动调整的 35 号字）
 				safehouse_btn.add_theme_font_size_override("font_size", 38)
-				
+
+				# 修复安全屋按钮识别：按钮显示时，将 _hit_control 裁剪到按钮顶部以上区域，
+				# 使按钮不被 _hit_control 遮挡，可完整接收鼠标事件（悬停/点击）；
+				# 同时 _hit_control 其余区域保持 STOP，仍正常触发卡片悬停（沙盒向导编辑框依赖）
+				if _hit_control and bg_sprite.texture:
+					var full_hit_size: Vector2 = bg_sprite.texture.get_size() * bg_sprite.scale
+					_hit_control.size = full_hit_size
+					_hit_control.position = -full_hit_size * 0.5
+					_hit_control.mouse_filter = Control.MOUSE_FILTER_STOP
+					# 按钮顶部（局部坐标）相对 _hit_control 顶部的距离
+					var btn_top_local: float = safehouse_btn.position.y
+					var hit_top_local: float = _hit_control.position.y
+					var cut_h: float = btn_top_local - hit_top_local - 2.0
+					if cut_h > 4.0 and cut_h < full_hit_size.y:
+						_hit_control.size = Vector2(full_hit_size.x, cut_h)
+						
 		else:
 			# 未满 100% 时，显示进度条，隐藏突袭按钮
 			if safehouse_btn:
 				safehouse_btn.visible = false
+				if _hit_control:
+					_hit_control.mouse_filter = Control.MOUSE_FILTER_STOP
 				
 			progress_bg.visible = true
 			progress_bar.visible = true
@@ -509,6 +526,12 @@ func update_display() -> void:
 		progress_bar.visible = false
 		if safehouse_btn:
 			safehouse_btn.visible = false
+			if _hit_control:
+				_hit_control.mouse_filter = Control.MOUSE_FILTER_STOP
+				if bg_sprite.texture:
+					var full_hit_size: Vector2 = bg_sprite.texture.get_size() * bg_sprite.scale
+					_hit_control.size = full_hit_size
+					_hit_control.position = -full_hit_size * 0.5
 		_progress_hover_rect = Rect2()
 		_progress_tooltip_text = ""
 		if _hit_control:
@@ -618,6 +641,8 @@ func _on_mouse_exited() -> void:
 		_hit_control.tooltip_text = ""
 	if _tooltip_panel:
 		_tooltip_panel.visible = false
+		# 重置 tooltip 缩放，防止上次反缩放修正残留导致下次显示被异常放大
+		_tooltip_panel.scale = Vector2.ONE
 	if member_data:
 		card_unhovered.emit(member_data.member_name)
 
@@ -635,6 +660,8 @@ func _update_progress_tooltip(local_pos_in_hit: Vector2) -> void:
 		var percent_int: int = int(round(percent * 100.0))
 		_tooltip_panel.get_node("Label").text = str(percent_int) + "%"
 		_tooltip_panel.visible = true
+		# 强制面板按新文本重新计算尺寸，避免切换内容后黑色边框残留上次的大小
+		_tooltip_panel.reset_size()
 		
 		# 核心修复：卡牌本身带有缩放，且相机 Camera2D 带有缩放 (zoom = 0.42)。
 		# 我们将 tooltip 的全局缩放强制修正为相对于屏幕的 1.0 (Vector2.ONE / (global_scale * canvas_scale))
@@ -646,6 +673,7 @@ func _update_progress_tooltip(local_pos_in_hit: Vector2) -> void:
 			_tooltip_panel.scale = Vector2.ONE / s
 			_tooltip_panel.position = get_local_mouse_position() + Vector2(28, -14) / s
 		else:
+			_tooltip_panel.scale = Vector2.ONE
 			_tooltip_panel.position = get_local_mouse_position() + Vector2(28, -14)
 	else:
 		_tooltip_panel.visible = false
@@ -663,18 +691,21 @@ func _on_safehouse_btn_gui_input(event: InputEvent) -> void:
 func _on_safehouse_btn_mouse_exited() -> void:
 	if _tooltip_panel:
 		_tooltip_panel.visible = false
+		_tooltip_panel.scale = Vector2.ONE
 
 func _update_safehouse_tooltip() -> void:
 	if _tooltip_panel == null or member_data == null:
 		return
 	
-	# 动态计算剩余回合数
-	var turns_held = GameManager.turn_count - GameManager.safehouse_100_turns.get(member_data.division, GameManager.turn_count)
+	# 动态计算剩余遭遇战次数
+	var turns_held = GameManager.encounter_count - GameManager.safehouse_100_turns.get(member_data.division, GameManager.encounter_count)
 	var remaining = 3 - turns_held
-	var text_content = "你已经掌握了当前安全屋情报的100%%\n请在 %d 回合内完成突袭，否则情报将衰减至 90%%！" % remaining
+	var text_content = "你已经掌握了当前安全屋情报的100%%\n请在 %d 次遭遇战内完成突袭，否则情报将衰减至 90%%！" % remaining
 	
 	_tooltip_panel.get_node("Label").text = text_content
 	_tooltip_panel.visible = true
+	# 强制面板按新文本重新计算尺寸，避免切换内容后黑色边框残留上次的大小
+	_tooltip_panel.reset_size()
 	
 	# 坐标微调：将水平位移调整为 32 像素以偏离鼠标指针，垂直位移调整为 -55 像素以显著高出指针尖端，彻底防止遮挡文字
 	var canvas_scale := get_canvas_transform().get_scale()
@@ -683,4 +714,5 @@ func _update_safehouse_tooltip() -> void:
 		_tooltip_panel.scale = Vector2.ONE / s
 		_tooltip_panel.position = get_local_mouse_position() + Vector2(32, -55) / s
 	else:
+		_tooltip_panel.scale = Vector2.ONE
 		_tooltip_panel.position = get_local_mouse_position() + Vector2(32, -55)

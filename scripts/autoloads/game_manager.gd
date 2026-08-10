@@ -198,10 +198,11 @@ var members: Dictionary = {}                # name -> MemberState
 
 var relationships: Array = []               # Array[RelationshipEntry]
 var intelligence: Dictionary = {}           # Division -> float (0.0-1.0)
-var safehouse_100_turns: Dictionary = {}    # Division -> int (turn count when reached 100%)
+var safehouse_100_turns: Dictionary = {}    # Division -> int (encounter count when reached 100%)
 var turn_count: int = 0
+var encounter_count: int = 0                # 累计遭遇战开启次数（用于情报衰减判定）
 var current_encounter: Dictionary = {}      # {division, members, processed}
-var encounter_queue: Array[Dictionary] = [] # 多部门遭遇队列
+var encounter_queue: Array[int] = [] # 本回合待出场的部门号队列（成员在遇到时按需生成）
 var prison_queue: Array[String] = []        # 按入狱顺序记录名字
 var history_stack: Array[Dictionary] = []   # 用于回退的状态栈
 
@@ -219,6 +220,7 @@ func initialize_game():
 	intelligence.clear()
 	safehouse_100_turns.clear()
 	turn_count = 0
+	encounter_count = 0
 	current_encounter.clear()
 	encounter_queue.clear()
 	prison_queue.clear()
@@ -409,8 +411,27 @@ func _add_intel_points_to_division(div: int, points: int) -> int:
 	if new_points >= INTEL_READY_THRESHOLD_POINTS:
 		safehouse_ready.emit(div)
 		if not safehouse_100_turns.has(div):
-			safehouse_100_turns[div] = turn_count
-			print("[DEBUG 安全屋就绪] 部门 ", DIVISION_NAMES.get(div, ""), " 达到 100% 情报，在回合 ", turn_count, " 开始记录")
+			safehouse_100_turns[div] = encounter_count
+			print("[DEBUG 安全屋就绪] 部门 ", DIVISION_NAMES.get(div, ""), " 达到 100% 情报，在第 ", encounter_count, " 次遭遇后开始记录")
+		# 部门情报满时，本部门在审讯室的成员被释放（星级减1，1星保持不减）
+		var prisoners_to_release: Array[MemberState] = []
+		for mname in members:
+			var m: MemberState = members[mname]
+			if m.is_imprisoned and (m.division == div or m.prison_intel_division == div):
+				prisoners_to_release.append(m)
+		for m in prisoners_to_release:
+			m.is_imprisoned = false
+			m.prison_turns_left = 0
+			m.prison_rank_snapshot = -1
+			m.prison_intel_per_turn_points = 0
+			m.has_pending_prison_penalty = false
+			prison_queue.erase(m.member_name)
+			if m.rank > 1:
+				m.rank -= 1
+				print("[情报满释放] 在押成员 ", m.member_name, " 因部门情报满从审讯室释放，星级减1（降至 ", m.rank, " 星）")
+			else:
+				print("[情报满释放] 在押成员 ", m.member_name, " 因部门情报满从审讯室释放，由于为 1 星，保持 1 星不减")
+			member_released.emit(m.member_name)
 	return new_points - old_points
 
 func _remove_intel_points_from_division(div: int, points: int) -> int:
@@ -559,16 +580,18 @@ func generate_encounter() -> Dictionary:
 	turn_count += 1
 	turn_advanced.emit(turn_count)
 
-	# 检查满情报的部门是否在3个遭遇战回合内未突袭，强行掉落至90%
+	# 检查满情报的部门是否在3次遭遇战内未突袭，强行掉落至90%
+	# （本场遭遇开启计入后，encounter_count - 记录值 >= 3 即触发）
+	encounter_count += 1
 	var to_decay := []
 	for div in safehouse_100_turns:
-		if turn_count - safehouse_100_turns[div] >= 3:
+		if encounter_count - safehouse_100_turns[div] >= 3:
 			to_decay.append(div)
 	for div in to_decay:
 		intelligence[div] = 0.9
 		safehouse_100_turns.erase(div)
 		intelligence_changed.emit(div, 0.9)
-		print("[DEBUG 情报衰减] 部门 ", DIVISION_NAMES.get(div, ""), " 情报已满 3 回合未突袭，衰减至 90%")
+		print("[DEBUG 情报衰减] 部门 ", DIVISION_NAMES.get(div, ""), " 情报已满 3 次遭遇战未突袭，衰减至 90%")
 
 	encounter_queue.clear()
 	current_encounter.clear()
@@ -607,29 +630,25 @@ func generate_encounter() -> Dictionary:
 			print("[DEBUG 生成前] 自由人: ", _mn, " rank=", _m.rank, " revealed=", _m.is_revealed)
 	# ====== DEBUG END ======
 
-	# 为每个部门生成遭遇事件
-	# used_members 确保同一成员在同一回合只出现在一场遭遇战中
-	var used_members: Dictionary = {}
+	# 只确定本回合出场部门的顺序，遭遇成员在玩家实际遇到该场时再按需生成
+	# （避免一次性生成多场遭遇时，后面的部门成员被前面的遭遇竞争占用而整场被跳过）
 	for div in divisions_this_turn:
-		var enc := _generate_single_encounter(div, used_members)
-		if not enc.is_empty():
-			for m in enc.get("members", []):
-				used_members[m.member_name] = true
-			encounter_queue.append(enc)
+		encounter_queue.append(div)
 
 	if encounter_queue.is_empty():
 		return {}
 
-	# 启动第一个遭遇（如果第一个被跳过，则循环推进直至找到有效的，或队列为空）
+	# 启动第一场遭遇（按需生成成员）
 	current_encounter = {}
 	while not encounter_queue.is_empty():
-		var enc = encounter_queue.pop_front()
+		var div = encounter_queue.pop_front()
+		var enc := _create_encounter_for_division(int(div))
 		_check_and_release_imprisoned_subordinates_for_encounter(enc)
 		_validate_encounter(enc)
 		if not enc.get("members", []).is_empty():
 			current_encounter = enc
 			break
-			
+
 	if current_encounter.is_empty():
 		# 队列里所有遭遇战均被跳过
 		board_changed.emit()
@@ -664,6 +683,11 @@ func _has_unrevealed_members() -> bool:
 		if m.is_on_board and not m.is_revealed and not m.is_leader:
 			return true
 	return false
+
+func _create_encounter_for_division(div: int) -> Dictionary:
+	## 按需生成单场遭遇（玩家实际遇到该部门时调用）
+	## 每场独立选择成员，不做跨遭遇去重
+	return _generate_single_encounter(div, {})
 
 func _generate_single_encounter(div: int, used_members: Dictionary = {}) -> Dictionary:
 	## 按 "主成员 + 增援" 模型生成单个部门遭遇
@@ -955,9 +979,28 @@ func _check_and_release_imprisoned_subordinates_for_encounter(enc: Dictionary) -
 	# 只释放真正参与本场遭遇战（且目前处于在押状态）的成员
 	for m in enc.get("members", []):
 		if m.is_imprisoned:
-			print("[提前释放] 开启遭遇战，参与遭遇的在押成员 ", m.member_name, " 提前被释放（延迟结算降星）！")
-			_release_imprisoned_member(m, false) # 延迟扣星
-			m.has_pending_prison_penalty = true
+			# 提前释放结算：一次性发放"剩余回合数 × 每回合情报数"的情报
+			# （需在释放前读取，_release_imprisoned_member 会清空相关字段）
+			var remain_turns: int = maxi(m.prison_turns_left, 0)
+			var per_turn: int = m.prison_intel_per_turn_points
+			if per_turn <= 0:
+				var snapshot_rank: int = m.prison_rank_snapshot if m.prison_rank_snapshot >= 0 else m.rank
+				per_turn = _get_prison_intel_points_by_rank(snapshot_rank)
+			var intel_div := _resolve_intel_division_for_member(m)
+			if remain_turns > 0 and per_turn > 0:
+				_add_intel_points_to_division(intel_div, remain_turns * per_turn)
+				print("[提前释放情报结算] 在押成员 ", m.member_name, " 提前释放，发放 ", remain_turns * per_turn, " 点 ", DIVISION_NAMES.get(intel_div, ""), " 情报（剩余", remain_turns, "回合 × 每回合", per_turn, "点）")
+			# 立即扣星（星级>1 减1，1星保持不减），并释放成员
+			print("[提前释放] 开启遭遇战，参与遭遇的在押成员 ", m.member_name, " 提前被释放（立即结算降星）！")
+			if m.rank > 1:
+				m.rank -= 1
+			m.is_imprisoned = false
+			m.prison_turns_left = 0
+			m.prison_rank_snapshot = -1
+			m.prison_intel_per_turn_points = 0
+			m.has_pending_prison_penalty = false
+			prison_queue.erase(m.member_name)
+			member_released.emit(m.member_name)
 
 func _reveal_encounter_members(enc: Dictionary):
 	for m in enc.get("members", []):
@@ -1017,7 +1060,8 @@ func advance_encounter_queue() -> Dictionary:
 
 	current_encounter = {}
 	while not encounter_queue.is_empty():
-		var enc = encounter_queue.pop_front()
+		var div = encounter_queue.pop_front()
+		var enc := _create_encounter_for_division(int(div))
 		_check_and_release_imprisoned_subordinates_for_encounter(enc)
 		_validate_encounter(enc)
 		if not enc.get("members", []).is_empty():
@@ -1031,6 +1075,8 @@ func advance_encounter_queue() -> Dictionary:
 		save_game_to_disk()
 		return {}
 	
+	# 记录本场遭遇开启（用于情报衰减：满情报后 3 次遭遇战未突袭即衰减）
+	encounter_count += 1
 	_process_prison_intel()
 	ActionLogic.refresh_action_caches(self) # 每次新遭遇开启时刷新随机缓存
 	_reveal_encounter_members(current_encounter)
@@ -1125,6 +1171,9 @@ func _process_prison_intel():
 				var snapshot_rank := m.prison_rank_snapshot if m.prison_rank_snapshot >= 0 else m.rank
 				tick_points = _get_prison_intel_points_by_rank(snapshot_rank)
 			_add_intel_points_to_division(intel_div, tick_points)
+			# 若本次加情报已使部门情报满并触发“情报满释放”，该成员已不在押，跳过后续处理
+			if not m.is_imprisoned:
+				continue
 			m.prison_turns_left -= 1
 			if m.prison_turns_left <= 0:
 				to_release.append(m.member_name)
@@ -1139,9 +1188,11 @@ func _check_encounter_end():
 	for m in current_encounter.get("members", []):
 		if m.member_name not in current_encounter.get("processed", []):
 			return
-	# 当前遭遇完成，确保残余延迟出狱扣星惩罚全部结算
+	# 当前遭遇完成，确保残余延迟出狱扣星惩罚全部结算（防御性兜底，正常已提前结算）
+	var had_pending := false
 	for m in current_encounter.get("members", []):
 		if m.has_pending_prison_penalty:
+			had_pending = true
 			m.has_pending_prison_penalty = false
 			if m.rank > 0:
 				m.rank -= 1
@@ -1152,6 +1203,9 @@ func _check_encounter_end():
 	var div_name: String = DIVISION_NAMES.get(current_encounter.get("division", 0), "未知")
 	print("[遭遇结束] ", div_name, " | 处理人数: ", current_encounter.get("processed", []).size())
 	current_encounter.clear()
+	# 若本次遭遇结束涉及提前释放扣星，刷新卡片显示（星级可能已变化）
+	if had_pending:
+		board_changed.emit()
 	encounter_ended.emit()
 
 # ===== 藏身处 =====
@@ -1296,6 +1350,7 @@ func save_state():
 	state.intelligence = intelligence.duplicate()
 	state.safehouse_100_turns = safehouse_100_turns.duplicate()
 	state.turn_count = turn_count
+	state.encounter_count = encounter_count
 	
 	state.current_encounter = current_encounter.duplicate()
 	if current_encounter.has("members"):
@@ -1306,17 +1361,7 @@ func save_state():
 	if current_encounter.has("processed"):
 		state.current_encounter.processed = current_encounter.processed.duplicate()
 		
-	var eq: Array[Dictionary] = []
-	for enc in encounter_queue:
-		var c_enc = enc.duplicate()
-		if enc.has("members"):
-			var eq_m = []
-			for m in enc.members:
-				eq_m.append(state.members[m.member_name])
-			c_enc.members = eq_m
-		if enc.has("processed"):
-			c_enc.processed = enc.processed.duplicate()
-		eq.append(c_enc)
+	var eq: Array[int] = encounter_queue.duplicate()
 	state.encounter_queue = eq
 		
 	var pq: Array[String] = []
@@ -1345,6 +1390,8 @@ func undo():
 	if state.has("safehouse_100_turns"):
 		safehouse_100_turns = state.safehouse_100_turns.duplicate()
 	turn_count = state.turn_count
+	if state.has("encounter_count"):
+		encounter_count = state.encounter_count
 	current_encounter = state.current_encounter
 	
 	encounter_queue.clear()
@@ -1456,6 +1503,7 @@ func save_game_to_disk(mode_id: String = ""):
 	save_data["is_sandbox_mode"] = is_sandbox_mode
 	save_data["bench_pool"] = bench_pool
 	save_data["turn_count"] = turn_count
+	save_data["encounter_count"] = encounter_count
 	
 	save_data["intelligence"] = {}
 	for k in intelligence:
@@ -1485,19 +1533,8 @@ func save_game_to_disk(mode_id: String = ""):
 		ce["processed"] = ce["processed"].duplicate()
 	save_data["current_encounter"] = ce
 	
-	# 遭遇队列
-	var eq = []
-	for enc in encounter_queue:
-		var c_enc = enc.duplicate()
-		if enc.has("members"):
-			var eq_m = []
-			for m in enc["members"]:
-				eq_m.append(m.member_name)
-			c_enc["members"] = eq_m
-		if enc.has("processed"):
-			c_enc["processed"] = enc["processed"].duplicate()
-		eq.append(c_enc)
-	save_data["encounter_queue"] = eq
+	# 遭遇队列（存部门号，成员在遇到时按需生成）
+	save_data["encounter_queue"] = encounter_queue.duplicate()
 	
 	# 监狱队列
 	save_data["prison_queue"] = prison_queue
@@ -1557,6 +1594,9 @@ func load_game_from_disk(mode_id: String = "") -> bool:
 	var s100 = data.get("safehouse_100_turns", {})
 	for k in s100:
 		safehouse_100_turns[int(k)] = int(s100[k])
+
+	# encounter_count（遭遇战计数，用于情报衰减）
+	encounter_count = int(data.get("encounter_count", 0))
 		
 	# members - 原地更新数据，不破坏引用
 	var members_data = data.get("members", {})
@@ -1585,20 +1625,14 @@ func load_game_from_disk(mode_id: String = "") -> bool:
 			ce["processed"] = ce["processed"].duplicate()
 	current_encounter = ce
 	
-	# encounter_queue
+	# encounter_queue（存部门号，成员在遇到时按需生成）
 	encounter_queue.clear()
-	for enc in data.get("encounter_queue", []):
-		var c_enc = enc.duplicate()
-		if c_enc.has("division"):
-			c_enc["division"] = int(c_enc["division"])
-		var eq_m = []
-		for mname in enc.get("members", []):
-			if members.has(mname):
-				eq_m.append(members[mname])
-		c_enc["members"] = eq_m
-		if enc.has("processed"):
-			c_enc["processed"] = c_enc["processed"].duplicate()
-		encounter_queue.append(c_enc)
+	for div in data.get("encounter_queue", []):
+		if div is Dictionary:
+			# 兼容旧版存档：旧格式为完整遭遇字典，取部门号
+			encounter_queue.append(int(div.get("division", 0)))
+		else:
+			encounter_queue.append(int(div))
 	
 	# prison_queue
 	var pq_data = data.get("prison_queue", [])

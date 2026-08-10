@@ -1409,6 +1409,31 @@ func _show_card_editor_overlay(mname: String, screen_pos: Vector2) -> void:
 			intel_lbl.text = "情报: " + str(pts) + "/100"
 			GameManager.intelligence[m.division] = ratio
 			GameManager.intelligence_changed.emit(m.division, ratio)
+			# 与经典模式情报达 100% 的行为一致：记录满情报时的遭遇计数（供 3 次遭遇战未突袭衰减）
+			if ratio >= 1.0:
+				if not GameManager.safehouse_100_turns.has(m.division):
+					GameManager.safehouse_100_turns[m.division] = GameManager.encounter_count
+				# 部门情报满时，本部门在审讯室的成员被释放（星级减1，1星保持不减）
+				var prisoners_to_release: Array = []
+				for pname in GameManager.members:
+					var pm = GameManager.members[pname]
+					if pm.is_imprisoned and (pm.division == m.division or pm.prison_intel_division == m.division):
+						prisoners_to_release.append(pm)
+				for pm in prisoners_to_release:
+					pm.is_imprisoned = false
+					pm.prison_turns_left = 0
+					pm.prison_rank_snapshot = -1
+					pm.prison_intel_per_turn_points = 0
+					pm.has_pending_prison_penalty = false
+					GameManager.prison_queue.erase(pm.member_name)
+					if pm.rank > 1:
+						pm.rank -= 1
+						print("[情报满释放] 在押成员 ", pm.member_name, " 因部门情报满从审讯室释放，星级减1（降至 ", pm.rank, " 星）")
+					else:
+						print("[情报满释放] 在押成员 ", pm.member_name, " 因部门情报满从审讯室释放，由于为 1 星，保持 1 星不减")
+					GameManager.member_released.emit(pm.member_name)
+			else:
+				GameManager.safehouse_100_turns.erase(m.division)
 
 		drag_area.gui_input.connect(func(ev: InputEvent):
 			if ev is InputEventMouseButton:
@@ -1500,6 +1525,10 @@ func _show_card_editor_overlay(mname: String, screen_pos: Vector2) -> void:
 			m.is_imprisoned = true
 			m.prison_turns_left = selection["turns"]
 			m.prison_intel_division = m.division
+			# 与经典模式审讯一致：记录入狱星级快照与每回合情报点数（使用编辑器选择的星级）
+			m.rank = selection["rank"]
+			m.prison_rank_snapshot = clampi(m.rank, 0, 3)
+			m.prison_intel_per_turn_points = max(1, m.prison_rank_snapshot * 3) # 首领 星级×3
 			if mname not in GameManager.prison_queue:
 				GameManager.prison_queue.append(mname)
 			GameManager._promote_new_leader(m.division)
@@ -1507,6 +1536,10 @@ func _show_card_editor_overlay(mname: String, screen_pos: Vector2) -> void:
 			m.is_imprisoned = true
 			m.prison_turns_left = selection["turns"]
 			m.prison_intel_division = m.division
+			# 与经典模式审讯一致：记录入狱星级快照与每回合情报点数（使用编辑器选择的星级）
+			m.rank = selection["rank"]
+			m.prison_rank_snapshot = clampi(m.rank, 0, 3)
+			m.prison_intel_per_turn_points = max(1, m.prison_rank_snapshot * 2) # 下属 星级×2
 			if mname not in GameManager.prison_queue:
 				GameManager.prison_queue.append(mname)
 				
@@ -2088,6 +2121,7 @@ func _load_preset(preset_name: String):
 			m.cached_bargain_target = ""
 			
 	GameManager.turn_count = 0
+	GameManager.encounter_count = 0
 	GameManager.current_encounter.clear()
 	GameManager.encounter_queue.clear()
 	GameManager.prison_queue.clear()

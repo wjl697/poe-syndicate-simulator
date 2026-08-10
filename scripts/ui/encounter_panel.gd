@@ -91,7 +91,7 @@ func _build_ui():
 
 	# 下一个遭遇按钮
 	_next_btn = Button.new()
-	_next_btn.text = "▶ 下一个部门遭遇"
+	_next_btn.text = "▶ 下一部门遭遇"
 	_next_btn.custom_minimum_size = Vector2(180, 36)
 	var next_style := StyleBoxTexture.new()
 	next_style.texture = preload("res://辛迪加素材/按钮.png")
@@ -171,7 +171,7 @@ func show_close_button():
 	_title_label.text = "遭遇结束"
 
 func show_next_button():
-	## 显示"下一个部门遭遇"按钮
+	## 显示"下一部门遭遇"按钮
 	_next_btn.visible = true
 	_close_btn.visible = false
 	_title_label.text = "当前部门遭遇结束"

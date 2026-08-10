@@ -2,6 +2,10 @@ extends Node2D
 
 ## 主场景控制器 — 创建面板、UI层，协调遭遇流程
 
+var _tex_btn := preload("res://辛迪加素材/界面UI/按钮.png")
+var _tex_bg_opening := preload("res://辛迪加素材/界面UI/开局背景.png")
+var _font_noto := preload("res://辛迪加素材/字体/NotoSansSC-VariableFont_wght.ttf")
+
 var _board
 var _ui_layer: CanvasLayer
 
@@ -25,7 +29,7 @@ var _mode_select_btn: Button
 var _current_encounter_member: String = ""
 var _showing_result: bool = false
 var _finish_enc_btn: Button        # 接替 EncounterPanel 的流程控制按钮
-var _release_all_btn: Button       # 全部释放按钮（位于下一个部门按钮上方）
+var _release_all_btn: Button       # 全部释放按钮（位于下一部门按钮上方）
 var _tutorial_btn: Button          # 教学模式按钮
 var _selected_whiteboard_member: String = ""
 var _whiteboard_line_mode: String = ""
@@ -70,8 +74,7 @@ func _build_ui_layer():
 	# 开始遭遇按钮 — 右下角主行动按钮
 	_encounter_btn = _make_button("⚔  开始遭遇", Vector2(-225, -75), Color(0.15, 0.45, 0.8))
 	_encounter_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_encounter_btn.custom_minimum_size = Vector2(200, 52)
-	_encounter_btn.add_theme_font_size_override("font_size", 20)
+	_encounter_btn.custom_minimum_size = Vector2(160, 40)
 	_encounter_btn.pressed.connect(_on_encounter_pressed)
 	hud.add_child(_encounter_btn)
 
@@ -88,9 +91,10 @@ func _build_ui_layer():
 	hud.add_child(_turn_label)
 
 	# 模式选择主菜单按钮 — 右上角唯一统一模式入口
-	_mode_select_btn = _make_button("🔀 模式选择", Vector2(-180, 16), Color(0.65, 0.45, 0.15))
+	_mode_select_btn = _make_button("🔀 模式选择", Vector2(-225, 16), Color(0.65, 0.45, 0.15))
 	_mode_select_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_mode_select_btn.custom_minimum_size = Vector2(160, 40)
+	_mode_select_btn.size = Vector2(160, 40)
 	_mode_select_btn.pressed.connect(_show_mode_selection_panel)
 	hud.add_child(_mode_select_btn)
 
@@ -127,7 +131,7 @@ func _build_ui_layer():
 	for div in GameManager.ALL_DIVISIONS:
 		var btn := _make_button("突袭 " + GameManager.DIVISION_NAMES[div], Vector2(-225, -255 - div_index * 52), Color(0.5, 0.3, 0.1))
 		btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-		btn.custom_minimum_size = Vector2(200, 44)
+		btn.custom_minimum_size = Vector2(160, 40)
 		btn.visible = false
 		var div_copy := div
 		btn.pressed.connect(func(): _on_raid_pressed(div_copy))
@@ -136,16 +140,18 @@ func _build_ui_layer():
 		div_index += 1
 
 	# 重置游戏按钮 — 右上（模式选择下方，等间距）
-	_reset_btn = _make_button("↺ 重置游戏", Vector2(-180, 66), Color(0.4, 0.2, 0.2))
+	_reset_btn = _make_button("↺ 重置游戏", Vector2(-225, 76), Color(0.4, 0.2, 0.2))
 	_reset_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_reset_btn.custom_minimum_size = Vector2(160, 40)
+	_reset_btn.size = Vector2(160, 40)
 	_reset_btn.pressed.connect(_on_reset_pressed)
 	hud.add_child(_reset_btn)
 
 	# 撤销操作按钮 — 重置游戏下方（等间距）
-	_undo_btn = _make_button("↩ 撤销操作", Vector2(-180, 116), Color(0.3, 0.4, 0.5))
+	_undo_btn = _make_button("↩ 撤销操作", Vector2(-225, 136), Color(0.3, 0.4, 0.5))
 	_undo_btn.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_undo_btn.custom_minimum_size = Vector2(160, 40)
+	_undo_btn.size = Vector2(160, 40)
 	_undo_btn.pressed.connect(_on_undo_pressed)
 	hud.add_child(_undo_btn)
 
@@ -157,14 +163,14 @@ func _build_ui_layer():
 	# --- 流程控制按钮 (右下角垂直堆叠，无重叠) ---
 	_release_all_btn = _make_button("🕊 全部释放", Vector2(-225, -195), Color(0.35, 0.35, 0.45))
 	_release_all_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_release_all_btn.custom_minimum_size = Vector2(200, 48)
+	_release_all_btn.custom_minimum_size = Vector2(160, 40)
 	_release_all_btn.visible = false
 	_release_all_btn.pressed.connect(_on_release_all_pressed)
 	hud.add_child(_release_all_btn)
 
 	_finish_enc_btn = _make_button("➡ 处理下一波", Vector2(-225, -135), Color(0.15, 0.55, 0.25))
 	_finish_enc_btn.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
-	_finish_enc_btn.custom_minimum_size = Vector2(200, 48)
+	_finish_enc_btn.custom_minimum_size = Vector2(160, 40)
 	_finish_enc_btn.visible = false
 	_finish_enc_btn.pressed.connect(_on_next_encounter)
 	hud.add_child(_finish_enc_btn)
@@ -347,7 +353,7 @@ func _update_ui_state():
 	
 	# 下一个部门按钮控制
 	if not is_in_sandbox_wizard and GameManager.current_encounter.is_empty() and not GameManager.encounter_queue.is_empty():
-		_finish_enc_btn.text = "➡ 下一个部门"
+		_finish_enc_btn.text = "➡ 下一部门"
 		_finish_enc_btn.visible = true
 	else:
 		_finish_enc_btn.visible = false
@@ -622,33 +628,42 @@ func _on_state_restored():
 		_info_label.text = "点击「开始遭遇」继续"
 
 # ===== 辅助 =====
-func _make_button(text: String, pos: Vector2, color: Color) -> Button:
+func _make_button(text: String, pos: Vector2, _color: Color) -> Button:
 	var btn := Button.new()
 	btn.text = text
 	btn.position = pos
 
-	var style := StyleBoxFlat.new()
-	style.bg_color = color
-	style.corner_radius_top_left = 10
-	style.corner_radius_top_right = 10
-	style.corner_radius_bottom_left = 10
-	style.corner_radius_bottom_right = 10
-	style.content_margin_left = 16
-	style.content_margin_right = 16
-	style.content_margin_top = 8
-	style.content_margin_bottom = 8
+	# 文字样式参考模式选择卡片内按钮 (默认字体, 金色文字+阴影)
+	btn.add_theme_font_size_override("font_size", 16)
+	btn.add_theme_color_override("font_color", Color(1.0, 0.95, 0.8))
+	btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0))
+	btn.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.95))
+	btn.add_theme_constant_override("shadow_offset_x", 2)
+	btn.add_theme_constant_override("shadow_offset_y", 2)
+
+	# 九宫格 StyleBox (按钮.png)
+	var style := StyleBoxTexture.new()
+	style.texture = _tex_btn
+	style.texture_margin_left = 16
+	style.texture_margin_top = 16
+	style.texture_margin_right = 16
+	style.texture_margin_bottom = 16
 	btn.add_theme_stylebox_override("normal", style)
 
 	var hover := style.duplicate()
-	hover.bg_color = color.lightened(0.2)
+	hover.modulate_color = Color(1.2, 1.15, 0.95, 1.0)
 	btn.add_theme_stylebox_override("hover", hover)
 
 	var pressed_s := style.duplicate()
-	pressed_s.bg_color = color.darkened(0.1)
+	pressed_s.modulate_color = Color(0.8, 0.75, 0.7, 1.0)
 	btn.add_theme_stylebox_override("pressed", pressed_s)
 
-	btn.add_theme_font_size_override("font_size", 16)
-	btn.add_theme_color_override("font_color", Color.WHITE)
+	var disabled_s := style.duplicate()
+	disabled_s.modulate_color = Color(0.45, 0.45, 0.45, 1.0)
+	btn.add_theme_stylebox_override("disabled", disabled_s)
+	btn.add_theme_color_override("font_disabled_color", Color(0.6, 0.6, 0.6, 1.0))
+
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 	return btn
 
 func _set_game_content_visible(v: bool):
@@ -666,6 +681,7 @@ var _is_mode_active: bool = false
 
 func _show_mode_selection_panel():
 	# 仅在已有活动运行中模式时，才自动保存该模式
+	var returning_from_game := _is_mode_active
 	if _is_mode_active and not GameManager.current_mode_id.is_empty():
 		GameManager.save_game_to_disk(GameManager.current_mode_id)
 	_is_mode_active = false
@@ -678,10 +694,13 @@ func _show_mode_selection_panel():
 	_set_game_content_visible(false)
 	if _mode_selection_panel != null and is_instance_valid(_mode_selection_panel):
 		_mode_selection_panel.visible = true
+		if returning_from_game and _mode_selection_panel.has_method("show_lobby"):
+			_mode_selection_panel.show_lobby()
 		return
 
 	var panel_script := preload("res://scripts/ui/mode_selection_panel.gd")
 	_mode_selection_panel = panel_script.new()
+	_mode_selection_panel.start_direct_lobby = returning_from_game
 	_mode_selection_panel.mode_selected.connect(_on_mode_selected)
 	_ui_layer.add_child(_mode_selection_panel)
 
@@ -1129,8 +1148,18 @@ func _show_sandbox_mode_entry_choice():
 	backdrop.mouse_filter = Control.MOUSE_FILTER_STOP
 	_ui_layer.add_child(backdrop)
 
+	# 背景：使用与模式选择一致的开局背景图，替代灰色遮罩
+	var bg_tex := TextureRect.new()
+	bg_tex.texture = _tex_bg_opening
+	bg_tex.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	bg_tex.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	bg_tex.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg_tex.custom_minimum_size = get_viewport_rect().size
+	backdrop.add_child(bg_tex)
+
+	# 轻暗色遮罩，突出中央面板
 	var color_rect := ColorRect.new()
-	color_rect.color = Color(0, 0, 0, 0.55)
+	color_rect.color = Color(0, 0, 0, 0.35)
 	color_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	backdrop.add_child(color_rect)
 
@@ -1154,7 +1183,7 @@ func _show_sandbox_mode_entry_choice():
 	style.content_margin_bottom = 24
 	panel.add_theme_stylebox_override("panel", style)
 
-	var panel_size := Vector2(460, 210)
+	var panel_size := Vector2(460, 270)
 	panel.size = panel_size
 	var vp := get_viewport_rect().size
 	panel.position = Vector2((vp.x - panel_size.x) * 0.5, (vp.y - panel_size.y) * 0.5)
@@ -1211,6 +1240,22 @@ func _show_sandbox_mode_entry_choice():
 		_start_sandbox_wizard()
 	)
 	btn_hbox.add_child(wizard_btn)
+
+	var back_btn := Button.new()
+	back_btn.text = " ◀ 返回模式选择 "
+	back_btn.custom_minimum_size = Vector2(180, 40)
+	back_btn.add_theme_font_size_override("font_size", 14)
+	back_btn.pressed.connect(func():
+		backdrop.queue_free()
+		_show_mode_selection_panel()
+		# 明确切换到模式选择大厅（三卡界面），而非主菜单
+		if _mode_selection_panel != null and is_instance_valid(_mode_selection_panel):
+			if _mode_selection_panel.has_method("show_lobby"):
+				_mode_selection_panel.show_lobby()
+			else:
+				_mode_selection_panel.start_direct_lobby = true
+	)
+	vbox.add_child(back_btn)
 
 func _show_sandbox_confirmation_popup():
 	# 创建黑色半透明背景遮罩

@@ -277,6 +277,11 @@ static func get_overlay_description(gm, member, action: int) -> String:
 				BetrayEffect.DESTROY_OTHER_DIV_EQUIP: return "摧毁" + target_div_name + "成员装备"
 				BetrayEffect.GAIN_OTHER_DIV_INTEL: return "+20" + target_div_name + "情报"
 				BetrayEffect.USURP: return name + "变为" + div_name + "的首领。" + name + "和" + target_name + "变成敌对"
+			# 兜底：效果未预掷时，显示效果池中第一个有效效果的详细说明（与沙盒模式一致）
+			var statuses = get_betray_effects_status(gm, member)
+			for st in statuses:
+				if st.get("is_valid", false) and st.get("description", "") != "":
+					return st["description"]
 			return "背叛 " + target_name
 		gm.ActionType.BARGAIN:
 			var effect = member.cached_bargain_effect
@@ -320,6 +325,11 @@ static func get_overlay_description(gm, member, action: int) -> String:
 				BargainEffect.DROP_VEILED: return "掉落一些加密物品"
 				BargainEffect.DROP_MAP: return "丢下一张地图"
 				BargainEffect.DROP_SCARAB: return "掉落一些圣甲虫"
+			# 兜底：效果未预掷时，显示效果池中第一个有效效果的详细说明（与沙盒模式一致）
+			var statuses = get_bargain_effects_status(gm, member)
+			for st in statuses:
+				if st.get("is_valid", false) and st.get("description", "") != "":
+					return st["description"]
 			return "获取 " + div_name + " 情报"
 	return ""
 

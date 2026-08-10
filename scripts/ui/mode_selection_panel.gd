@@ -8,14 +8,22 @@ signal mode_selected(mode_id: String)
 
 var _tex_bg := preload("res://辛迪加素材/界面UI/开局背景.png")
 var _tex_btn := preload("res://辛迪加素材/界面UI/按钮.png")
+var _tex_btn2 := preload("res://辛迪加素材/界面UI/按钮2.png")
 
 var _center_container: CenterContainer
+var _lobby_vbox: VBoxContainer
+var _main_menu: Control
+var _overlay_root: Control
+var _back_btn: Button
 
 var _tex_logo := preload("res://辛迪加素材/界面UI/加载图标.png")
 var _font_noto := preload("res://辛迪加素材/字体/NotoSansSC-VariableFont_wght.ttf")
 var _tex_subtitle := preload("res://辛迪加素材/界面UI/界面副标题.png")
 
 static var has_shown_logo_splash: bool = false
+
+# 若为 true，则 _ready 直接显示模式选择大厅（从游戏中返回），不进入主菜单
+var start_direct_lobby: bool = false
 
 func _ready():
 	set_anchors_preset(Control.PRESET_FULL_RECT)
@@ -24,10 +32,14 @@ func _ready():
 	get_viewport().size_changed.connect(_update_panel_layout)
 	_build_ui()
 
-	# 品牌 Logo 仅在游戏启动时展示一次，后续中途切回模式选择大厅时直接呈现大厅
-	if not ModeSelectionPanel.has_shown_logo_splash:
+	# 品牌 Logo 仅在游戏启动时展示一次；动画结束后进入主菜单
+	if start_direct_lobby:
+		_show_mode_lobby()
+	elif not ModeSelectionPanel.has_shown_logo_splash:
 		ModeSelectionPanel.has_shown_logo_splash = true
 		_play_logo_splash_animation()
+	else:
+		_show_main_menu()
 
 func _play_logo_splash_animation():
 	var splash_layer := Control.new()
@@ -82,15 +94,19 @@ func _play_logo_splash_animation():
 	tween.tween_interval(2.0)
 	# 阶段 3：Logo 品牌图文平滑淡出回纯黑背景 (0.6 秒)
 	tween.tween_property(center_box, "modulate:a", 0.0, 0.6)
-	# 阶段 4：纯黑背景层平滑淡出 (0.4 秒) 揭开模式选择大厅
+	# 阶段 4：纯黑背景层平滑淡出 (0.4 秒) 揭开主菜单
 	tween.tween_property(splash_layer, "modulate:a", 0.0, 0.4)
-	tween.tween_callback(splash_layer.queue_free)
+	tween.tween_callback(func():
+		splash_layer.queue_free()
+		_show_main_menu()
+	)
 
 	# 点击跳过
 	splash_layer.gui_input.connect(func(ev: InputEvent):
 		if ev is InputEventMouseButton and ev.pressed:
 			tween.kill()
 			splash_layer.queue_free()
+			_show_main_menu()
 	)
 
 func _update_panel_layout():
@@ -102,11 +118,13 @@ func _update_panel_layout():
 func _build_ui():
 	var vp_size := get_viewport_rect().size
 
-	# 1. 全屏开局背景图 (使用与游戏主面板完全一致的等比覆盖裁切模式 STRETCH_KEEP_ASPECT_COVERED)
+	# 1. 开局背景图 (与游戏内背景.png 的 TextureRect 完全一致：COVERED 全屏铺满)
 	var bg := TextureRect.new()
 	bg.texture = _tex_bg
 	bg.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	bg.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
+	bg.texture_repeat = CanvasItem.TEXTURE_REPEAT_DISABLED
+	bg.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.custom_minimum_size = vp_size
 	add_child(bg)
@@ -121,22 +139,15 @@ func _build_ui():
 	main_vbox.alignment = BoxContainer.ALIGNMENT_CENTER
 	main_vbox.add_theme_constant_override("separation", 24)
 	_center_container.add_child(main_vbox)
+	_lobby_vbox = main_vbox
+	# 初始隐藏大厅：加载动画结束后先进入主菜单
+	_center_container.visible = false
 
 	# --- 标题区域 ---
 	var title_box := VBoxContainer.new()
 	title_box.alignment = BoxContainer.ALIGNMENT_CENTER
 	title_box.add_theme_constant_override("separation", 6)
 	main_vbox.add_child(title_box)
-
-	var title_lbl := Label.new()
-	title_lbl.text = "辛 迪 加"
-	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title_lbl.add_theme_font_size_override("font_size", 52)
-	title_lbl.add_theme_color_override("font_color", Color(0.98, 0.88, 0.55))
-	title_lbl.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.95))
-	title_lbl.add_theme_constant_override("shadow_offset_x", 3)
-	title_lbl.add_theme_constant_override("shadow_offset_y", 3)
-	title_box.add_child(title_lbl)
 
 	var sub_lbl := Label.new()
 	sub_lbl.text = "— 请 选择 游 戏 模 式 —"
@@ -157,19 +168,19 @@ func _build_ui():
 	var modes_data := [
 		{
 			"id": "classic",
-			"title": "⚔  经典模式",
+			"title": "经典模式",
 			"sub": "标准遭遇战",
 			"desc": "标准黑帮解密遭遇流程\n搜集组织情报，捕获部门首领"
 		},
 		{
 			"id": "sandbox",
-			"title": "🛠  沙盒模式",
+			"title": "沙盒模式",
 			"sub": "自由盘面布阵",
 			"desc": "自由创建与修改自定义局势\n手调成员在押状态、星级与部门"
 		},
 		{
 			"id": "tutorial",
-			"title": "🎓  教学模式",
+			"title": "画板模式",
 			"sub": "电子画板推演",
 			"desc": "电子画板教学与逻辑推演\n自由连线、抽象卡牌与模拟遭遇"
 		}
@@ -178,6 +189,266 @@ func _build_ui():
 	for mdata in modes_data:
 		var card := _create_mode_card(mdata)
 		cards_hbox.add_child(card)
+
+# ===== 主菜单 / 覆盖层导航 =====
+
+func _show_main_menu():
+	if _lobby_vbox != null and is_instance_valid(_lobby_vbox):
+		_center_container.visible = false
+	if _back_btn != null and is_instance_valid(_back_btn):
+		_back_btn.visible = false
+	if _overlay_root != null and is_instance_valid(_overlay_root):
+		_overlay_root.queue_free()
+		_overlay_root = null
+	if _main_menu == null or not is_instance_valid(_main_menu):
+		var menu_script := preload("res://scripts/ui/main_menu_panel.gd")
+		_main_menu = menu_script.new()
+		_main_menu.mode_selection_requested.connect(_show_mode_lobby)
+		_main_menu.encyclopedia_requested.connect(_show_encyclopedia)
+		_main_menu.contact_requested.connect(_show_contact)
+		_main_menu.exit_requested.connect(_on_main_menu_exit)
+		add_child(_main_menu)
+	_main_menu.visible = true
+
+func _show_mode_lobby():
+	if _main_menu != null and is_instance_valid(_main_menu):
+		_main_menu.visible = false
+	if _center_container != null and is_instance_valid(_center_container):
+		_center_container.visible = true
+	_ensure_back_btn()
+	if _back_btn != null and is_instance_valid(_back_btn):
+		_back_btn.visible = true
+
+# 供外部调用：直接从游戏返回时显示模式选择大厅
+func show_lobby():
+	_show_mode_lobby()
+
+# 独立定位的「返回主菜单」按钮（锚点定位，不影响大厅其他元素布局）
+func _ensure_back_btn():
+	if _back_btn != null and is_instance_valid(_back_btn):
+		return
+	_back_btn = Button.new()
+	_back_btn.text = "返回菜单"
+	_back_btn.add_theme_font_size_override("font_size", 18)
+	var back_font := FontVariation.new()
+	back_font.base_font = _font_noto
+	back_font.variation_embolden = 0.5   # ← 矢量加粗：0 常规 / 0.5 中粗 / 1.0 更粗
+	_back_btn.add_theme_font_override("font", back_font)
+	_back_btn.add_theme_color_override("font_color", Color(1.0, 0.95, 0.8))
+	_back_btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0))
+	_back_btn.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.95))
+	_back_btn.add_theme_constant_override("shadow_offset_x", 2)
+	_back_btn.add_theme_constant_override("shadow_offset_y", 2)
+
+	var back_normal := StyleBoxTexture.new()
+	back_normal.texture = _tex_btn2
+	back_normal.texture_margin_left = 28
+	back_normal.texture_margin_top = 10
+	back_normal.texture_margin_right = 28
+	back_normal.texture_margin_bottom = 10
+
+	var back_hover := back_normal.duplicate()
+	back_hover.modulate_color = Color(1.2, 1.15, 0.95, 1.0)
+
+	var back_pressed := back_normal.duplicate()
+	back_pressed.modulate_color = Color(0.8, 0.75, 0.7, 1.0)
+
+	_back_btn.add_theme_stylebox_override("normal", back_normal)
+	_back_btn.add_theme_stylebox_override("hover", back_hover)
+	_back_btn.add_theme_stylebox_override("pressed", back_pressed)
+	_back_btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	_back_btn.pressed.connect(_show_main_menu)
+
+	# 直接定位：水平居中，垂直固定在屏幕中下区域
+	# 调整 position 可单独移动按钮，不影响大厅其他元素布局
+	var vp_size := get_viewport_rect().size
+	_back_btn.custom_minimum_size = Vector2(260, 0)
+	_back_btn.position = Vector2((vp_size.x - 260) * 0.5, vp_size.y * 0.9)
+	add_child(_back_btn)
+
+func _create_overlay() -> Control:
+	if _main_menu != null and is_instance_valid(_main_menu):
+		_main_menu.visible = false
+	var overlay := Control.new()
+	overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.custom_minimum_size = get_viewport_rect().size
+	overlay.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(overlay)
+	_overlay_root = overlay
+	return overlay
+
+func _on_main_menu_exit():
+	get_tree().quit()
+
+## 百科大全：目前为游戏规则说明占位页面
+func _show_encyclopedia():
+	var overlay := _create_overlay()
+
+	var bg_black := ColorRect.new()
+	bg_black.color = Color(0.05, 0.05, 0.08, 0.96)
+	bg_black.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(bg_black)
+
+	var panel := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.08, 0.12, 0.98)
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(0.7, 0.58, 0.28, 0.9)
+	style.corner_radius_top_left = 12
+	style.corner_radius_top_right = 12
+	style.corner_radius_bottom_left = 12
+	style.corner_radius_bottom_right = 12
+	style.shadow_color = Color(0, 0, 0, 0.7)
+	style.shadow_size = 18
+	style.content_margin_left = 30
+	style.content_margin_right = 30
+	style.content_margin_top = 24
+	style.content_margin_bottom = 24
+	panel.add_theme_stylebox_override("panel", style)
+
+	var panel_size := Vector2(760, 620)
+	panel.size = panel_size
+	var vp := get_viewport_rect().size
+	panel.position = Vector2((vp.x - panel_size.x) * 0.5, (vp.y - panel_size.y) * 0.5)
+	overlay.add_child(panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.add_theme_constant_override("separation", 14)
+	panel.add_child(vbox)
+
+	var title_lbl := Label.new()
+	title_lbl.text = "📖  百科大全 — 游戏规则"
+	title_lbl.add_theme_font_size_override("font_size", 24)
+	title_lbl.add_theme_color_override("font_color", Color(0.98, 0.88, 0.55))
+	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title_lbl)
+
+	var divider := ColorRect.new()
+	divider.custom_minimum_size = Vector2(0, 2)
+	divider.color = Color(0.7, 0.58, 0.28, 0.4)
+	vbox.add_child(divider)
+
+	var rules_text := Label.new()
+	rules_text.text = "《辛迪加》游戏规则（整理中）\n\n" + \
+		"1. 组织由四大部门构成：运输部、防卫部、科研部、调停部，另有自由人与在押人员。\n\n" + \
+		"2. 点击「开始遭遇」随机生成一场遭遇，根据线索锁定目标部门成员。\n\n" + \
+		"3. 处理遭遇时，可选择审讯、调查、营救、释放等行动，行动结果会改变成员状态与情报值。\n\n" + \
+		"4. 当部门情报值达到满值时，藏身处坐标暴露，可发动「突袭」捕获首领。\n\n" + \
+		"5. 捕获全部部门首领即可获胜；成员被押时间过长可能引发严重后果。\n\n" + \
+		"6. 支持经典模式、沙盒模式与教学模式三种游玩方式。\n\n" + \
+		"— 更多内容正在完善中，敬请期待 —"
+	rules_text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	rules_text.add_theme_font_size_override("font_size", 16)
+	rules_text.add_theme_color_override("font_color", Color(0.92, 0.92, 0.95))
+	rules_text.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.8))
+	rules_text.add_theme_constant_override("shadow_offset_x", 1)
+	rules_text.add_theme_constant_override("shadow_offset_y", 1)
+	rules_text.custom_minimum_size = Vector2(680, 420)
+	vbox.add_child(rules_text)
+
+	var back_btn := Button.new()
+	back_btn.text = "◀  返回主菜单"
+	back_btn.custom_minimum_size = Vector2(220, 46)
+	back_btn.add_theme_font_size_override("font_size", 16)
+	back_btn.pressed.connect(_show_main_menu)
+	back_btn.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(back_btn)
+
+## 联系作者：B站主页 + 赞赏码占位
+func _show_contact():
+	var overlay := _create_overlay()
+
+	var bg_black := ColorRect.new()
+	bg_black.color = Color(0, 0, 0, 0.6)
+	bg_black.set_anchors_preset(Control.PRESET_FULL_RECT)
+	overlay.add_child(bg_black)
+
+	var panel := PanelContainer.new()
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.08, 0.08, 0.12, 0.98)
+	style.border_width_left = 2
+	style.border_width_top = 2
+	style.border_width_right = 2
+	style.border_width_bottom = 2
+	style.border_color = Color(0.7, 0.58, 0.28, 0.9)
+	style.corner_radius_top_left = 12
+	style.corner_radius_top_right = 12
+	style.corner_radius_bottom_left = 12
+	style.corner_radius_bottom_right = 12
+	style.shadow_color = Color(0, 0, 0, 0.7)
+	style.shadow_size = 18
+	style.content_margin_left = 30
+	style.content_margin_right = 30
+	style.content_margin_top = 24
+	style.content_margin_bottom = 24
+	panel.add_theme_stylebox_override("panel", style)
+
+	var panel_size := Vector2(480, 380)
+	panel.size = panel_size
+	var vp := get_viewport_rect().size
+	panel.position = Vector2((vp.x - panel_size.x) * 0.5, (vp.y - panel_size.y) * 0.5)
+	overlay.add_child(panel)
+
+	var vbox := VBoxContainer.new()
+	vbox.alignment = BoxContainer.ALIGNMENT_CENTER
+	vbox.add_theme_constant_override("separation", 16)
+	panel.add_child(vbox)
+
+	var title_lbl := Label.new()
+	title_lbl.text = "💬  联系作者"
+	title_lbl.add_theme_font_size_override("font_size", 22)
+	title_lbl.add_theme_color_override("font_color", Color(0.98, 0.88, 0.55))
+	title_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vbox.add_child(title_lbl)
+
+	var bili_btn := Button.new()
+	bili_btn.text = "B站主页：https://space.bilibili.com/XXXXXXX"
+	bili_btn.custom_minimum_size = Vector2(400, 46)
+	bili_btn.add_theme_font_size_override("font_size", 15)
+	bili_btn.pressed.connect(func():
+		OS.shell_open("https://space.bilibili.com/XXXXXXX")
+	)
+	vbox.add_child(bili_btn)
+
+	var tip_lbl := Label.new()
+	tip_lbl.text = "如果喜欢这个游戏，欢迎扫码支持一下："
+	tip_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	tip_lbl.add_theme_font_size_override("font_size", 14)
+	tip_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 0.95))
+	vbox.add_child(tip_lbl)
+
+	# 赞赏码占位：待替换为真实赞赏码图片
+	var qr_placeholder := ColorRect.new()
+	qr_placeholder.color = Color(0.2, 0.22, 0.28, 1.0)
+	qr_placeholder.custom_minimum_size = Vector2(180, 180)
+	var qr_frame := PanelContainer.new()
+	qr_frame.add_theme_stylebox_override("panel", _make_panel_style())
+	vbox.add_child(qr_frame)
+	qr_frame.add_child(qr_placeholder)
+
+	var close_btn := Button.new()
+	close_btn.text = "关闭"
+	close_btn.custom_minimum_size = Vector2(160, 42)
+	close_btn.add_theme_font_size_override("font_size", 15)
+	close_btn.pressed.connect(_show_main_menu)
+	vbox.add_child(close_btn)
+
+func _make_panel_style() -> StyleBox:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color(0.1, 0.1, 0.15, 1.0)
+	style.border_width_left = 1
+	style.border_width_top = 1
+	style.border_width_right = 1
+	style.border_width_bottom = 1
+	style.border_color = Color(0.7, 0.58, 0.28, 0.9)
+	style.corner_radius_top_left = 8
+	style.corner_radius_top_right = 8
+	style.corner_radius_bottom_left = 8
+	style.corner_radius_bottom_right = 8
+	return style
 
 ## 创建单个模式卡片（符合底板木框的精美居中比例）
 func _create_mode_card(data: Dictionary) -> Control:
@@ -255,8 +526,8 @@ func _create_mode_card(data: Dictionary) -> Control:
 	# 模式选择按钮 (使用 按钮.png 纹理)
 	var btn := Button.new()
 	btn.text = data["title"]
-	btn.custom_minimum_size = Vector2(205, 48)
-	btn.add_theme_font_size_override("font_size", 20)
+	btn.custom_minimum_size = Vector2(130, 36)
+	btn.add_theme_font_size_override("font_size", 15)
 	btn.add_theme_color_override("font_color", Color(1.0, 0.95, 0.8))
 	btn.add_theme_color_override("font_hover_color", Color(1.0, 1.0, 1.0))
 	btn.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.95))
@@ -282,6 +553,9 @@ func _create_mode_card(data: Dictionary) -> Control:
 	btn.add_theme_stylebox_override("pressed", btn_pressed)
 	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 
+	# 让按钮不拦截鼠标事件，避免鼠标移到按钮上时卡片容器触发 mouse_exited
+	btn.mouse_filter = Control.MOUSE_FILTER_PASS
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vbox.add_child(btn)
 
 	var mode_id: String = data["id"]

@@ -16,6 +16,11 @@ var _active_mode_label: Label
 var _tool_buttons: Dictionary = {} # tool_mode -> {btn: Button, base_color: Color}
 var _current_tool: String = "MOVE"
 
+var _tex_show := preload("res://辛迪加素材/界面UI/显示按钮.png")
+var _tex_hide := preload("res://辛迪加素材/界面UI/隐藏按钮.png")
+var _panel: PanelContainer
+var _toggle_btn: TextureButton
+
 func _ready():
 	add_to_group("teaching_toolbar")
 	
@@ -38,11 +43,18 @@ func _align_to_toolbar_node():
 			position = node.global_position
 			size = node.size
 			custom_minimum_size = node.size
+			_update_toggle_btn_position()
 			break
 
+func _update_toggle_btn_position():
+	# 切换按钮位于工具箱右下角，使用绝对坐标定位
+	# 修改 position 的 x/y 即可移动按钮（相对工具箱左上角）
+	_toggle_btn.set_anchors_preset(Control.PRESET_TOP_LEFT)
+	_toggle_btn.position = Vector2(540, 155)
+
 func _build_ui():
-	var panel := PanelContainer.new()
-	panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_panel = PanelContainer.new()
+	_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
 	
 	var p_style := StyleBoxFlat.new()
 	p_style.bg_color = Color(0.08, 0.09, 0.13, 0.95)
@@ -58,12 +70,12 @@ func _build_ui():
 	p_style.content_margin_right = 10
 	p_style.content_margin_top = 6
 	p_style.content_margin_bottom = 6
-	panel.add_theme_stylebox_override("panel", p_style)
-	add_child(panel)
+	_panel.add_theme_stylebox_override("panel", p_style)
+	add_child(_panel)
 	
 	var vbox := VBoxContainer.new()
 	vbox.add_theme_constant_override("separation", 5)
-	panel.add_child(vbox)
+	_panel.add_child(vbox)
 	
 	# ===== 行 1：顶部标题栏与快捷手感提示 (HBox) =====
 	var hbox_header := HBoxContainer.new()
@@ -186,6 +198,32 @@ func _build_ui():
 		queue_free()
 	)
 	hbox_actions.add_child(btn_exit)
+
+	# 工具箱显隐切换按钮（锚定于工具箱右下角，独立于面板，隐藏面板时仍保留）
+	_toggle_btn = TextureButton.new()
+	_toggle_btn.texture_normal = _tex_show
+	_toggle_btn.texture_pressed = _tex_show
+	_toggle_btn.texture_hover = _tex_show
+	_toggle_btn.ignore_texture_size = true
+	_toggle_btn.custom_minimum_size = Vector2(45, 53)
+	_toggle_btn.size = Vector2(45, 53)
+	_toggle_btn.scale = Vector2(0.6, 0.6)
+	_toggle_btn.pressed.connect(_toggle_panel)
+	add_child(_toggle_btn)
+	_update_toggle_btn_position()
+
+func _toggle_panel():
+	if _panel == null:
+		return
+	_panel.visible = not _panel.visible
+	if _panel.visible:
+		_toggle_btn.texture_normal = _tex_show
+		_toggle_btn.texture_pressed = _tex_show
+		_toggle_btn.texture_hover = _tex_show
+	else:
+		_toggle_btn.texture_normal = _tex_hide
+		_toggle_btn.texture_pressed = _tex_hide
+		_toggle_btn.texture_hover = _tex_hide
 
 func update_selected_card_info(card_name: String, rank: int, div_name: String):
 	if card_name == "":

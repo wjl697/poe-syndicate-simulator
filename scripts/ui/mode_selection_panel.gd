@@ -110,6 +110,8 @@ func _play_logo_splash_animation():
 	)
 
 func _update_panel_layout():
+	if not is_inside_tree() or not visible:
+		return
 	var vp_size := get_viewport_rect().size
 	custom_minimum_size = vp_size
 	if _center_container != null and is_instance_valid(_center_container):

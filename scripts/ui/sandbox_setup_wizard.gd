@@ -107,6 +107,8 @@ func _ready():
 	call_deferred("_fix_step1_panel_rect")
 # ===== 手动响应视口大小变化 =====
 func _on_viewport_size_changed():
+	if not is_inside_tree() or not visible:
+		return
 	var vp := get_viewport_rect().size
 	size = vp
 	# 手动强制刷新顶部和底部面板

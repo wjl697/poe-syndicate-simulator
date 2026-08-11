@@ -514,6 +514,12 @@ static func _do_betray(gm, m, result: Dictionary):
 			gm._set_relationship_type(m.member_name, target.member_name, gm.RelationType.RIVALRY)
 			result.effects.append(m.member_name + "变为" + div_name + "的首领。" + m.member_name + "和" + target.member_name + "变成敌对")
 
+		_:
+			if m.division != gm.Division.NONE:
+				gm._add_intel_points_to_division(m.division, 6)
+			gm._set_relationship_type(m.member_name, target.member_name, gm.RelationType.RIVALRY)
+			result.effects.append("+6" + div_name + "情报。" + m.member_name + "和" + target.member_name + "变成敌对")
+
 static func _do_bargain(gm, m, result: Dictionary):
 	var effect = m.cached_bargain_effect
 	var effective_div = m.division

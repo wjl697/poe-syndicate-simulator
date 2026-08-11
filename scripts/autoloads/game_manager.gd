@@ -408,7 +408,7 @@ func _add_intel_points_to_division(div: int, points: int) -> int:
 	var new_points := mini(INTEL_READY_THRESHOLD_POINTS, old_points + points)
 	intelligence[div] = _to_intel_ratio(new_points)
 	intelligence_changed.emit(div, intelligence[div])
-	if new_points >= INTEL_READY_THRESHOLD_POINTS:
+	if old_points < INTEL_READY_THRESHOLD_POINTS and new_points >= INTEL_READY_THRESHOLD_POINTS:
 		safehouse_ready.emit(div)
 		if not safehouse_100_turns.has(div):
 			safehouse_100_turns[div] = encounter_count
@@ -1272,7 +1272,6 @@ func _promote_new_leader(div: int, exclude_member_name: String = "") -> String:
 
 	var promoted = null
 	var promoted_from_div: int = Division.NONE
-	var promoted_was_leader := false
 	if not transfer_pool.is_empty():
 		promoted = transfer_pool[randi() % transfer_pool.size()]
 
@@ -1281,13 +1280,7 @@ func _promote_new_leader(div: int, exclude_member_name: String = "") -> String:
 		promoted.division = div
 		promoted.is_leader = true
 		promoted.rank = 1
-		var msg = promoted.member_name + " 从 " + DIVISION_NAMES.get(promoted_from_div, "") + " 调任为 " + DIVISION_NAMES.get(div, "") + " 新首领（原部门星级作废，重置为1星）"
-		if promoted_was_leader:
-			# 递归提拔原部门的新首领
-			var sub_msg = _promote_new_leader(promoted_from_div, exclude_member_name)
-			if sub_msg != "":
-				msg += " | " + sub_msg
-		return msg
+		return promoted.member_name + " 从 " + DIVISION_NAMES.get(promoted_from_div, "") + " 调任为 " + DIVISION_NAMES.get(div, "") + " 新首领（原部门星级作废，重置为1星）"
 	else:
 		return DIVISION_NAMES.get(div, "") + " 暂无可提拔人员，首领空缺"
 

@@ -260,6 +260,7 @@ func _create_action_button(action: int, pos: Vector2, w: float, h: float):
 	btn.size = Vector2(w, h)
 	btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	btn.text = ActionLogic.get_action_button_text(GameManager, _member_data, action)
+	btn.tooltip_text = GameManager.get_action_description(action)
 	btn.add_theme_font_size_override("font_size", 13)
 	btn.add_theme_color_override("font_color", Color(1.0, 0.9, 0.8)) # 淡金色文字
 

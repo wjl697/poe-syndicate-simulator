@@ -783,7 +783,10 @@ func _generate_single_encounter(div: int, used_members: Dictionary = {}) -> Dict
 	# 4. 循环填充 3 个槽位
 	var base_slot_rates = [0.35, 0.25, 0.15]
 	var increased_reinforcement_chance := 0.15 + 0.50  # 天赋 15% + 圣甲虫 50%
-	var dept_member_count = get_division_slot_count(div)
+	var dept_member_count: int = get_division_slot_count(div)
+	# 自由人支援上限 = 部门剩余空位（满员部门不允许自由人支援）
+	var free_agent_capacity: int = MAX_MEMBERS_PER_DIVISION - dept_member_count
+	var free_agent_added: int = 0
 
 	for slot_idx in range(3):
 		if enc_members.size() >= 4:
@@ -857,9 +860,12 @@ func _generate_single_encounter(div: int, used_members: Dictionary = {}) -> Dict
 			if m.division != Division.NONE and m.division != div and rel == null:
 				continue
 
-			# 游民满员阻断
-			if m.division == Division.NONE and dept_member_count >= MAX_MEMBERS_PER_DIVISION and rel == null:
-				continue
+			# 游民满员阻断：部门满员不允许自由人支援；且自由人支援数不超过部门剩余空位
+			if m.division == Division.NONE:
+				if free_agent_capacity <= 0:
+					continue
+				if free_agent_added >= free_agent_capacity:
+					continue
 
 			# 计算权重数值
 			var weight := 0.0
@@ -905,6 +911,8 @@ func _generate_single_encounter(div: int, used_members: Dictionary = {}) -> Dict
 			var selected = candidates[selected_idx]
 			enc_members.append(selected)
 			used_members[selected.member_name] = true
+			if selected.division == Division.NONE:
+				free_agent_added += 1
 			print("[遭遇生成] 增援槽位 ", slot_idx + 1, " 抽中: ", selected.member_name, " (权重=", weights[selected_idx], ")")
 
 	return {
@@ -1248,9 +1256,8 @@ func _promote_new_leader(div: int, exclude_member_name: String = "") -> String:
 		promoted_free.rank = maxi(1, promoted_free.rank)
 		return promoted_free.member_name + " 从自由人中被提拔为 " + DIVISION_NAMES.get(div, "") + " 新首领"
 
-	# 无自由人可用时，从其他部门随机调任1人担任首领，星级重置为1
+	# 无自由人可用时，从其他部门随机调任1名普通成员担任首领，星级重置为1（首领不可被调任）
 	var transfer_pool: Array = []
-	var transfer_leader_pool: Array = []
 	for mname in members:
 		if mname == exclude_member_name:
 			continue
@@ -1260,18 +1267,14 @@ func _promote_new_leader(div: int, exclude_member_name: String = "") -> String:
 		if candidate.division == Division.NONE or candidate.division == div:
 			continue
 		if candidate.is_leader:
-			transfer_leader_pool.append(candidate)
-		else:
-			transfer_pool.append(candidate)
+			continue  # 首领不可被调任
+		transfer_pool.append(candidate)
 
 	var promoted = null
 	var promoted_from_div: int = Division.NONE
 	var promoted_was_leader := false
 	if not transfer_pool.is_empty():
 		promoted = transfer_pool[randi() % transfer_pool.size()]
-	elif not transfer_leader_pool.is_empty():
-		promoted = transfer_leader_pool[randi() % transfer_leader_pool.size()]
-		promoted_was_leader = true
 
 	if promoted:
 		promoted_from_div = promoted.division

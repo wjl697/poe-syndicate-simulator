@@ -1,3 +1,17 @@
-# Godot 4+ specific ignores
+# Godot 4 官方 Git 忽略规则
 .godot/
-/android/
+
+# 本地二进制导出产物
+export/
+*.exe
+*.pck
+
+# 编译调试日志与临时文件
+compile_output_*.txt
+*.tmp
+*.log
+*.bak
+
+# 系统临时文件
+.DS_Store
+Thumbs.db

@@ -3,8 +3,10 @@ extends Node2D
 ## 主场景控制器 — 创建面板、UI层，协调遭遇流程
 
 var _tex_btn := preload("res://辛迪加素材/界面UI/按钮.png")
-var _tex_bg_opening := preload("res://辛迪加素材/界面UI/开局背景.png")
-var _font_noto := preload("res://辛迪加素材/字体/NotoSansSC-VariableFont_wght.ttf")
+var _tex_bg_opening := preload("res://辛迪加素材/界面UI/开局背景.jpg")
+
+var _font_noto := preload("res://辛迪加素材/字体/zt.ttf")
+
 
 var _board
 var _ui_layer: CanvasLayer
@@ -39,6 +41,14 @@ var _hover_timer: SceneTreeTimer = null
 var _pending_hover_member: String = ""
 
 func _ready():
+	get_window().title = "辛迪加模拟器 V1.0"
+	var bg_rect = get_node_or_null("BackgroundCanvas/TextureRect")
+
+	if bg_rect:
+		var bg_tex = _load_bg_texture()
+		if bg_tex:
+			bg_rect.texture = bg_tex
+
 	_build_board()
 	_build_ui_layer()
 	_connect_manager_signals()
@@ -47,6 +57,19 @@ func _ready():
 
 	# 项目启动时隐蔽底盘，展示模式选择界面
 	_show_mode_selection_panel()
+
+static func _load_bg_texture() -> Texture2D:
+	var paths = [
+		"res://辛迪加素材/界面UI/背景.jpg",
+		"res://辛迪加素材/界面UI/背景.png"
+	]
+	for p in paths:
+		if ResourceLoader.exists(p):
+			var res = load(p)
+			if res is Texture2D:
+				return res
+	return null
+
 
 # ===== 构建面板（世界空间） =====
 func _build_board():

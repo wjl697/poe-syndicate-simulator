@@ -1,9 +1,9 @@
 [gd_scene format=3 uid="uid://rjmrpsht35fv"]
 
-[ext_resource type="Texture2D" uid="uid://bttgnb4wtxj7a" path="res://辛迪加素材/界面UI/背景.png" id="1_wtcfe"]
+[ext_resource type="Texture2D" uid="uid://bjqly2la7gcp4" path="res://辛迪加素材/界面UI/背景.jpg" id="1_wtcfe"]
 [ext_resource type="Script" uid="uid://c0yh0umayg3rf" path="res://scripts/main.gd" id="2_main"]
 
-[node name="Node2D" type="Node2D" unique_id=374323487]
+[node name="Node2D" type="Node2D" unique_id=75363149]
 position = Vector2(18, 13)
 script = ExtResource("2_main")
 
@@ -288,7 +288,6 @@ color = Color(0.5, 0.5, 0.5, 0.4)
 visible = false
 position = Vector2(952.00006, 540)
 scale = Vector2(0.40721652, 0.40721646)
-texture = ExtResource("1_wtcfe")
 
 [node name="自由人区域" type="ColorRect" parent="BackgroundCanvas" unique_id=199628851 groups=["unassigned_slot"]]
 visible = false

@@ -15,8 +15,10 @@ run/main_scene="res://node_2d.tscn"
 config/features=PackedStringArray("4.6", "Forward Plus")
 boot_splash/bg_color=Color(0, 0, 0, 1)
 boot_splash/show_image=false
-boot_splash/image="res://辛迪加素材/界面UI/开局背景.png"
-config/icon="res://icon.svg"
+boot_splash/image="res://辛迪加素材/界面UI/开局背景.jpg"
+
+config/icon="res://辛迪加素材/界面UI/加载图标.png"
+
 
 [autoload]
 
@@ -33,10 +35,12 @@ window/size/window_height_override=720
 window/stretch/mode="canvas_items"
 mouse_cursor/custom_image="uid://fwtcglk24ehh"
 gui/theme/custom_font="res://辛迪加素材/字体/zt.ttf"
+gui/tooltips/delay_sec=0.6
+gui/tooltips/viewport_offset=Vector2(16, 24)
 
 [editor_plugins]
 
-enabled=PackedStringArray("res://addons/godot_mcp/plugin.cfg")
+enabled=PackedStringArray("res://addons/godot_mcp/plugin.cfg", "res://addons/markdownlabel/plugin.cfg")
 
 [physics]
 

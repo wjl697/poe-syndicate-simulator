@@ -260,7 +260,7 @@ func _create_action_button(action: int, pos: Vector2, w: float, h: float):
 	btn.size = Vector2(w, h)
 	btn.mouse_filter = Control.MOUSE_FILTER_STOP
 	btn.text = ActionLogic.get_action_button_text(GameManager, _member_data, action)
-	btn.tooltip_text = GameManager.get_action_description(action)
+	btn.tooltip_text = ""
 	btn.add_theme_font_size_override("font_size", 13)
 	btn.add_theme_color_override("font_color", Color(1.0, 0.9, 0.8)) # 淡金色文字
 
@@ -286,6 +286,37 @@ func _create_action_button(action: int, pos: Vector2, w: float, h: float):
 	btn.pressed.connect(func(): 
 		_on_action_pressed(act_copy)
 	)
+
+	# 释放按钮：在按钮正上方显示自定义悬停提示 (使用系统 Tooltip 主题)
+	if action == GameManager.ActionType.RELEASE:
+		var tip_panel := PanelContainer.new()
+		tip_panel.visible = false
+		tip_panel.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tip_panel.z_index = 50
+		tip_panel.theme_type_variation = "TooltipPanel"
+		var tip_label := Label.new()
+		tip_label.text = GameManager.get_action_description(action)
+		tip_label.theme_type_variation = "TooltipLabel"
+		tip_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+		tip_panel.add_child(tip_label)
+		add_child(tip_panel)
+		_action_panels.append(tip_panel)
+
+		btn.mouse_entered.connect(func():
+			tip_panel.visible = true
+			tip_panel.reset_size()
+			await get_tree().process_frame
+			var tip_w := tip_panel.size.x
+			var tip_h := tip_panel.size.y
+			# 水平居中对齐按钮，垂直在按钮上方留 8px 间距
+			tip_panel.position = Vector2(
+				pos.x + w * 0.5 - tip_w * 0.5,
+				pos.y - tip_h - 8
+			)
+		)
+		btn.mouse_exited.connect(func():
+			tip_panel.visible = false
+		)
 
 	add_child(btn)
 	_action_panels.append(btn)

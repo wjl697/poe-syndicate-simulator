@@ -10,6 +10,7 @@ var _title_label: Label
 var _desc_label: RichTextLabel
 var _button_container: VBoxContainer
 var is_mouse_inside: bool = false  # 鼠标是否在面板内
+var _hover_tooltip: PanelContainer = null  # 释放按钮的自定义悬停提示
 
 func _ready():
 	_build_ui()
@@ -66,6 +67,20 @@ func _build_ui():
 	_button_container.add_theme_constant_override("separation", 5)
 	vbox.add_child(_button_container)
 
+	# 释放按钮专用悬停提示（显示在按钮正上方）
+	# 使用引擎原生 tooltip 主题，样式完全与系统一致
+	_hover_tooltip = PanelContainer.new()
+	_hover_tooltip.visible = false
+	_hover_tooltip.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_hover_tooltip.z_index = 50
+	_hover_tooltip.theme_type_variation = "TooltipPanel"
+	var tip_label := Label.new()
+	tip_label.name = "TipLabel"
+	tip_label.theme_type_variation = "TooltipLabel"
+	tip_label.autowrap_mode = TextServer.AUTOWRAP_OFF
+	_hover_tooltip.add_child(tip_label)
+	add_child(_hover_tooltip)
+
 func show_actions(member_name: String, actions: Array):
 	_current_member_name = member_name
 	_title_label.text = member_name
@@ -109,6 +124,30 @@ func show_actions(member_name: String, actions: Array):
 
 		var act_copy: int = action
 		btn.pressed.connect(func(): _on_action_pressed(act_copy))
+		btn.tooltip_text = ""
+
+		# 释放按钮：hover 时在按钮正上方显示自定义提示面板
+		if action == GameManager.ActionType.RELEASE:
+			var tip_text: String = GameManager.get_action_description(action)
+			_hover_tooltip.get_node("TipLabel").text = tip_text
+			btn.mouse_entered.connect(func():
+				_hover_tooltip.visible = true
+				_hover_tooltip.reset_size()
+				await get_tree().process_frame
+				var br := btn.get_rect()  # 相对于 _button_container
+				var btn_global_top_left := _button_container.to_global(br.position)
+				var local_top := to_local(btn_global_top_left)
+				var tip_w := _hover_tooltip.size.x
+				var tip_h := _hover_tooltip.size.y
+				# 水平居中对齐按钮，垂直在按钮上方留 6px 间距
+				_hover_tooltip.position = Vector2(
+					local_top.x + br.size.x * 0.5 - tip_w * 0.5,
+					local_top.y - tip_h - 6
+				)
+			)
+			btn.mouse_exited.connect(func():
+				_hover_tooltip.visible = false
+			)
 
 		_button_container.add_child(btn)
 

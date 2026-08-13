@@ -1126,7 +1126,10 @@ func execute_action(member_name: String, action: int):
 			var post_div = DIVISION_NAMES.get(m_after.division, "自由人") if m_after.division != Division.NONE else "自由人"
 			result.effects.append(m_after.member_name + " 因出狱扣减 1 星（降至 " + str(m_after.rank) + " 星，归属：" + post_div + "）")
 
-	current_encounter.get("processed", []).append(member_name)
+	if current_encounter is Dictionary:
+		if not current_encounter.has("processed"):
+			current_encounter["processed"] = []
+		current_encounter["processed"].append(member_name)
 	ActionLogic.refresh_action_caches(self)
 
 	# ===== 日志：动作执行摘要 =====
@@ -1154,8 +1157,12 @@ func release_all_current_encounter():
 	var remaining: Array = _get_remaining_encounter_members()
 	for m in remaining:
 		var result: Dictionary = ActionLogic.execute_action(self, m.member_name, ActionType.RELEASE)
-		current_encounter.get("processed", []).append(m.member_name)
+		if current_encounter is Dictionary:
+			if not current_encounter.has("processed"):
+				current_encounter["processed"] = []
+			current_encounter["processed"].append(m.member_name)
 		action_executed.emit(result)
+
 	ActionLogic.refresh_action_caches(self)
 	board_changed.emit()
 	_check_encounter_end()

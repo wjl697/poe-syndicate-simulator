@@ -9,9 +9,11 @@ signal encyclopedia_requested
 signal contact_requested
 signal exit_requested
 
-var _tex_bg := preload("res://辛迪加素材/界面UI/开局背景.png")
+var _tex_bg := preload("res://辛迪加素材/界面UI/开局背景.jpg")
+
 var _tex_btn := preload("res://辛迪加素材/界面UI/按钮2.png")
-var _font_noto := preload("res://辛迪加素材/字体/NotoSansSC-VariableFont_wght.ttf")
+var _font_noto := preload("res://辛迪加素材/字体/zt.ttf")
+
 
 func _ready():
 	set_anchors_preset(Control.PRESET_FULL_RECT)

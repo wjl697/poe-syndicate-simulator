@@ -455,7 +455,7 @@ func _build_ui():
 	_step1_panel.add_child(step1_vbox)
 	
 	var info_lbl := Label.new()
-	info_lbl.text = "步骤 1: 请选择 3 名成员放入替补席（绿色 = 上场 / 红色 = 替补席）"
+	info_lbl.text = "步骤 1: 请选择 3 名成员放入替补席"
 	info_lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	info_lbl.add_theme_font_size_override("font_size", 15)
 	info_lbl.add_theme_color_override("font_color", Color(0.9, 0.9, 0.9))
@@ -1011,6 +1011,13 @@ func _on_next_pressed():
 		_update_step_ui()
 	elif _current_step == 3:
 		# 关系连线绘制完毕，推进到第四步星级与监禁属性设置
+		# 若用户只点了第一张卡片未完成配对就点了下一步，清除选中状态和高亮，防止残留
+		if _step3_first_selected_member != "":
+			_step3_first_selected_member = ""
+			_relation_tip_label.text = "点击卡片来绘制关系连线"
+			var board = _get_board_node()
+			if board and board.has_method("clear_highlights"):
+				board.clear_highlights()
 		_current_step = 4
 		_update_step_ui()
 	elif _current_step == 4:
@@ -2058,10 +2065,13 @@ func _save_current_layout_to_preset(preset_name: String):
 		"transport": { "leader": "", "subordinates": [] },
 		"fortification": { "leader": "", "subordinates": [] },
 		"research": { "leader": "", "subordinates": [] },
-		"intervention": { "leader": "", "subordinates": [] }
+		"intervention": { "leader": "", "subordinates": [] },
+		"free_agents": []
 	}
 	
 	for div_name in div_data.keys():
+		if div_name == "free_agents":
+			continue
 		var div_enum = GameManager.Division.NONE
 		match div_name:
 			"transport": div_enum = GameManager.Division.TRANSPORT
@@ -2077,6 +2087,12 @@ func _save_current_layout_to_preset(preset_name: String):
 		for sub in subs:
 			if sub.is_on_board:
 				div_data[div_name]["subordinates"].append(sub.member_name)
+
+	# 收集在场上的自由人成员
+	for mname in _selected_members:
+		var m = GameManager.members.get(mname)
+		if m and m.is_on_board and m.division == GameManager.Division.NONE:
+			div_data["free_agents"].append(mname)
 				
 	var rel_list = []
 	for rel in GameManager.relationships:
@@ -2092,10 +2108,13 @@ func _save_current_layout_to_preset(preset_name: String):
 		if m:
 			states_data[mname] = {
 				"rank": m.rank,
+				"division": m.division,
+				"is_leader": m.is_leader,
 				"is_imprisoned": m.is_imprisoned,
 				"prison_turns_left": m.prison_turns_left,
 				"prison_intel_division": m.prison_intel_division
 			}
+
 		
 	_presets_dict["presets"][preset_name] = {
 		"benched": benched_list,
@@ -2172,13 +2191,15 @@ func _load_preset(preset_name: String):
 	# 3. 初始化并自动分配卡牌槽位
 	_auto_fill_placements(preset)
 	
-	# 加载各个成员的具体星级和监禁状态（如果存在）
+	# 加载各个成员的具体星级、部门及监禁状态（如果存在）
 	var states_data = preset.get("member_states", {})
 	for mname in _selected_members:
 		var m = GameManager.members.get(mname)
 		if m and states_data.has(mname):
 			var s = states_data[mname]
-			m.rank = int(s.get("rank", 1))
+			if s.has("rank"): m.rank = int(s.get("rank", 0))
+			if s.has("division"): m.division = int(s.get("division", 0))
+			if s.has("is_leader"): m.is_leader = bool(s.get("is_leader", false))
 			m.is_imprisoned = bool(s.get("is_imprisoned", false))
 			m.prison_turns_left = int(s.get("prison_turns_left", 0))
 			m.prison_intel_division = int(s.get("prison_intel_division", 0))
@@ -2186,13 +2207,26 @@ func _load_preset(preset_name: String):
 				if mname not in GameManager.prison_queue:
 					GameManager.prison_queue.append(mname)
 
+
 	# 4. 加载关系线连线
 	GameManager.relationships.clear()
-	for rel_data in preset.get("relationships", []):
-		var a = rel_data.get("a", "")
-		var b = rel_data.get("b", "")
-		var type = int(rel_data.get("type", 0))
-		GameManager._set_relationship_type(a, b, type)
+	var rels_preset = preset.get("relationships", [])
+	if rels_preset is Array:
+		for rel_data in rels_preset:
+			var a := ""
+			var b := ""
+			var type := 0
+			if rel_data is Dictionary:
+				a = str(rel_data.get("a", ""))
+				b = str(rel_data.get("b", ""))
+				type = int(rel_data.get("type", 0))
+			elif rel_data is Array and rel_data.size() >= 3:
+				a = str(rel_data[0])
+				b = str(rel_data[1])
+				type = int(rel_data[2])
+			if a != "" and b != "":
+				GameManager._set_relationship_type(a, b, type)
+
 		
 	# 5. 更新游戏数据为沙盒模式
 	GameManager.is_sandbox_mode = true
@@ -2231,6 +2265,8 @@ func _auto_fill_placements(preset: Dictionary):
 	var placed_members = []
 	
 	for div_name in div_data.keys():
+		if div_name == "free_agents":
+			continue
 		var div_enum = GameManager.Division.NONE
 		match div_name:
 			"transport": div_enum = GameManager.Division.TRANSPORT
@@ -2239,6 +2275,9 @@ func _auto_fill_placements(preset: Dictionary):
 			"intervention": div_enum = GameManager.Division.INTERVENTION
 			
 		var p = div_data[div_name]
+		if not (p is Dictionary):
+			continue
+
 		
 		# 摆放首领
 		var l = p.get("leader", "")
@@ -2257,6 +2296,16 @@ func _auto_fill_placements(preset: Dictionary):
 				m.is_leader = false
 				m.rank = 1
 				placed_members.append(s)
+
+	# 摆放预设中保存的自由人
+	var free_agents = div_data.get("free_agents", [])
+	for fa in free_agents:
+		if fa != "" and fa in _selected_members and fa not in placed_members:
+			var m = GameManager.members.get(fa)
+			m.division = GameManager.Division.NONE
+			m.is_leader = false
+			m.rank = 0
+			placed_members.append(fa)
 				
 	# 2. 搜集尚未被分配具体位置的上阵成员池
 	var pool = []
@@ -2265,45 +2314,48 @@ func _auto_fill_placements(preset: Dictionary):
 			pool.append(mname)
 	pool.shuffle()
 	
-	# 3. 补位空缺的插槽，严格满足 2-5-5-2 人数限制
-	var target_counts = {
-		GameManager.Division.TRANSPORT: 2,
-		GameManager.Division.FORTIFICATION: 5,
-		GameManager.Division.RESEARCH: 5,
-		GameManager.Division.INTERVENTION: 2
-	}
-	
-	for div_enum in target_counts.keys():
-		var target_num = target_counts[div_enum]
+	# 3. 补位空缺的插槽（仅当预设未显式指定自由人列表时按 2-5-5-2 填满，否则保留自由人）
+	var has_explicit_free_agents = div_data.has("free_agents")
+	if not has_explicit_free_agents:
+		var target_counts = {
+			GameManager.Division.TRANSPORT: 2,
+			GameManager.Division.FORTIFICATION: 5,
+			GameManager.Division.RESEARCH: 5,
+			GameManager.Division.INTERVENTION: 2
+		}
 		
-		# 计算当前已分派的实际人数
-		var current_members = []
-		var leader = GameManager.get_division_leader(div_enum)
-		if leader and leader.is_on_board:
-			current_members.append(leader)
-		for sub in GameManager.get_division_members(div_enum):
-			if sub.is_on_board:
-				current_members.append(sub)
-				
-		var needed = target_num - current_members.size()
-		for _i in range(needed):
-			if pool.is_empty():
-				break
-			var next_mname = pool.pop_back()
-			var m = GameManager.members.get(next_mname)
+		for div_enum in target_counts.keys():
+			var target_num = target_counts[div_enum]
 			
-			var has_leader = false
-			var test_leader = GameManager.get_division_leader(div_enum)
-			if test_leader and test_leader.is_on_board:
-				has_leader = true
+			# 计算当前已分派的实际人数
+			var current_members = []
+			var leader = GameManager.get_division_leader(div_enum)
+			if leader and leader.is_on_board:
+				current_members.append(leader)
+			for sub in GameManager.get_division_members(div_enum):
+				if sub.is_on_board:
+					current_members.append(sub)
+					
+			var needed = target_num - current_members.size()
+			for _i in range(needed):
+				if pool.is_empty():
+					break
+				var next_mname = pool.pop_back()
+				var m = GameManager.members.get(next_mname)
 				
-			m.division = div_enum
-			if not has_leader:
-				m.is_leader = true
-				m.rank = 1
-			else:
-				m.is_leader = false
-				m.rank = 1
+				var has_leader = false
+				var test_leader = GameManager.get_division_leader(div_enum)
+				if test_leader and test_leader.is_on_board:
+					has_leader = true
+					
+				m.division = div_enum
+				if not has_leader:
+					m.is_leader = true
+					m.rank = 1
+				else:
+					m.is_leader = false
+					m.rank = 1
+
 
 func _sync_benched_card_nodes():
 	# 确保 _benched_card_nodes 中有且仅有 _benched_members 中的成员卡牌节点

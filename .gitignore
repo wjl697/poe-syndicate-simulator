@@ -1,6 +1,12 @@
 # Godot 4 官方 Git 忽略规则
 .godot/
 
+# AI 开发工具临时缓存与规划草稿
+.agents/
+.claude/
+task.md
+walkthrough.md
+
 # 本地二进制导出产物
 export/
 *.exe
@@ -8,6 +14,8 @@ export/
 
 # 编译调试日志与临时文件
 compile_output_*.txt
+ui_tree_debug.txt
+test_size*.txt
 *.tmp
 *.log
 *.bak

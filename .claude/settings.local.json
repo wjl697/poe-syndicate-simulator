@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "mcp__godot-mcp__get_debug_output"
-    ]
-  }
-}

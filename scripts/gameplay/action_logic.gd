@@ -165,7 +165,7 @@ static func _roll_bargain_effect(gm, member) -> int:
 			
 	if can_form_trust: pool.append(BargainEffect.FORM_TRUST_ANY_GAIN_INTEL)
 	if same_rank_same_pos_diff_div: pool.append(BargainEffect.SWAP_DIVISION)
-	if gm.prison_queue.size() > 0: pool.append(BargainEffect.COMPLETE_INTERROGATIONS)
+	if gm.prison_queue.size() >= 2: pool.append(BargainEffect.COMPLETE_INTERROGATIONS)
 	
 	# 摧毁本部门装备 & 移除本部门死敌：只有当商谈者自身属于有效部门（非自由人）时才可生效
 	if member.division != gm.Division.NONE:
@@ -551,13 +551,13 @@ static func _do_bargain(gm, m, result: Dictionary):
 	
 	match effect:
 		BargainEffect.GAIN_OWN_DIV_INTEL:
-			# 情报数量与星级相关：3星=8，2星=6，1星=4，0星(自由人)=2
-			var intel_gain: int = 2
+			# 情报数量与星级相关：3星=8，2星=6，1星/0星(自由人)=4
+			var intel_gain: int = 4
 			if m.rank >= 3:
 				intel_gain = 8
 			elif m.rank == 2:
 				intel_gain = 6
-			elif m.rank == 1:
+			elif m.rank <= 1:
 				intel_gain = 4
 			if effective_div != gm.Division.NONE:
 				gm._add_intel_points_to_division(effective_div, intel_gain)
@@ -891,7 +891,7 @@ static func get_bargain_effects_status(gm, member) -> Array:
 				if is_valid:
 					target = valid_swap_targets.pick_random().member_name
 			BargainEffect.COMPLETE_INTERROGATIONS:
-				is_valid = gm.prison_queue.size() > 0
+				is_valid = gm.prison_queue.size() >= 2
 
 
 				
@@ -899,12 +899,12 @@ static func get_bargain_effects_status(gm, member) -> Array:
 		if is_valid:
 			match effect_id:
 				BargainEffect.GAIN_OWN_DIV_INTEL:
-					var _intel_gain: int = 2
+					var _intel_gain: int = 4
 					if member.rank >= 3:
 						_intel_gain = 8
 					elif member.rank == 2:
 						_intel_gain = 6
-					elif member.rank == 1:
+					elif member.rank <= 1:
 						_intel_gain = 4
 					desc = "+" + str(_intel_gain) + div_name + "情报"
 

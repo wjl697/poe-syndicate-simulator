@@ -108,4 +108,5 @@
 ## 💬 联系与反馈
 
 如果你对本项目有任何建议或改进想法，欢迎通过以下方式沟通交流：
-- **B站**：[@Ka3m](https://space.bilibili.com/99815426)
+- **联系作者**：[@Ka3m](https://space.bilibili.com/99815426)
+- **讲解地址**：[辛迪加模拟器，流程与机制讲解](https://www.bilibili.com/video/BV1w9b668EZy/?share_source=copy_web&vd_source=e6dd647a8e21624aaac8d767a2b0fd13)

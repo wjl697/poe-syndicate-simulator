@@ -21,6 +21,7 @@ config/icon="res://辛迪加素材/界面UI/加载图标.png"
 [autoload]
 
 GameManager="*res://scripts/autoloads/game_manager.gd"
+MCPRuntimeProbe="*res://addons/godot_mcp/runtime/mcp_runtime_probe.gd"
 
 [display]
 

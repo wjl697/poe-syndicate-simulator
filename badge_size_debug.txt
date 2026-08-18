@@ -1,0 +1,4 @@
+badge texture size: (351.0, 72.0)
+badge_scale: 0.4158
+badge scaled size: (145.9458, 29.9376)
+bg_w: 154.224, bg_h: 159.516

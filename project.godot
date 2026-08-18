@@ -1,0 +1,51 @@
+; Engine configuration file.
+; It's best edited using the editor UI and not directly,
+; since the parameters that go here are not all obvious.
+;
+; Format:
+;   [section] ; section goes between []
+;   param=value ; assign values to parameters
+
+config_version=5
+
+[application]
+
+config/name="辛迪加"
+run/main_scene="res://node_2d.tscn"
+config/features=PackedStringArray("4.6", "Forward Plus")
+boot_splash/bg_color=Color(0, 0, 0, 1)
+boot_splash/show_image=false
+boot_splash/image="res://辛迪加素材/界面UI/开局背景.jpg"
+config/icon="res://辛迪加素材/界面UI/加载图标.png"
+
+[autoload]
+
+GameManager="*res://scripts/autoloads/game_manager.gd"
+
+[display]
+
+window/size/viewport_width=1920
+window/size/viewport_height=1080
+window/size/mode=3
+window/size/window_width_override=1280
+window/size/window_height_override=720
+window/stretch/mode="canvas_items"
+mouse_cursor/custom_image="uid://fwtcglk24ehh"
+gui/theme/custom_font="res://辛迪加素材/字体/zt.ttf"
+gui/tooltips/delay_sec=0.6
+gui/tooltips/viewport_offset=Vector2(16, 24)
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/godot_mcp/plugin.cfg", "res://addons/markdownlabel/plugin.cfg")
+
+[physics]
+
+3d/physics_engine="Jolt Physics"
+
+[rendering]
+
+textures/canvas_textures/default_texture_filter=0
+rendering_device/driver.windows="d3d12"
+2d/snap/snap_2d_transforms_to_pixel=true
+2d/snap/snap_2d_vertices_to_pixel=true

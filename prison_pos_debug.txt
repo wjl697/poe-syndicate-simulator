@@ -1,0 +1,4 @@
+camera position: (939.0, 524.0)
+camera zoom: (0.42, 0.42)
+For viewport height 1080.0: screen_y = 714.719994544983
+For viewport height 1009.0: screen_y = 679.219994544983
